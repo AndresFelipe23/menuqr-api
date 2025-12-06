@@ -124,8 +124,7 @@ export class WebSocketService {
       Logger.info('Evento WebSocket: Pedido actualizado emitido', {
         categoria: LogCategory.SISTEMA,
         restauranteId,
-        detalle: { pedidoId: pedido.id },
-        estado: pedido.estado,
+        detalle: { pedidoId: pedido.id, estado: pedido.estado },
       });
     } catch (error: any) {
       Logger.error('Error al emitir evento de pedido actualizado', error instanceof Error ? error : new Error(String(error)), {
@@ -167,9 +166,7 @@ export class WebSocketService {
       Logger.info('Evento WebSocket: Item de pedido actualizado emitido', {
         categoria: LogCategory.SISTEMA,
         restauranteId,
-        detalle: { pedidoId: pedido.id },
-        itemId: item.id,
-        estado: item.estado,
+        detalle: { pedidoId: pedido.id, itemId: item.id, estado: item.estado },
       });
     } catch (error: any) {
       Logger.error('Error al emitir evento de item actualizado', error instanceof Error ? error : new Error(String(error)), {
@@ -228,7 +225,7 @@ export class WebSocketService {
       Logger.info('Notificación WebSocket emitida', {
         categoria: LogCategory.SISTEMA,
         usuarioId,
-        tipo,
+        detalle: { tipo },
       });
     } catch (error: any) {
       Logger.error('Error al emitir notificación', error instanceof Error ? error : new Error(String(error)), {
