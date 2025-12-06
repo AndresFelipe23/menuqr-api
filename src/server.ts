@@ -2789,7 +2789,14 @@ async function startServer() {
         ? `${process.env.API_URL.replace('/api', '')}/api/docs.json`
         : `http://localhost:${PORT}/api/docs.json`;
       
-      const { apiReference } = await import('@scalar/express-api-reference');
+      // Cargar Scalar usando import dinámico
+      // NOTA: TypeScript transformará esto a require() en CommonJS, pero Node.js 18+ 
+      // soporta imports dinámicos de ESM nativamente en tiempo de ejecución
+      const scalarModuleName = '@scalar/express-api-reference';
+      // Usar Function para evitar transformación estática de TypeScript
+      const dynamicImport = new Function('m', 'return import(m)');
+      const scalarModule = await dynamicImport(scalarModuleName);
+      const { apiReference } = scalarModule;
       
       // Scalar en la ruta raíz (/) - se registra después de todas las rutas de API
       // para que las rutas /api/* y /health tengan prioridad
