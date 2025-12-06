@@ -26,7 +26,6 @@ import pedidosRoutes from './routes/pedidos.routes';
 import storageRoutes from './routes/storage.routes';
 import suscripcionesRoutes from './routes/suscripciones.routes';
 import webhooksRoutes from './routes/webhooks.routes';
-import { apiReference } from '@scalar/express-api-reference';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -133,18 +132,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Scalar API Documentation
-const scalarUrl = process.env.API_URL 
-  ? `${process.env.API_URL.replace('/api', '')}/api/docs.json`
-  : `http://localhost:${PORT}/api/docs.json`;
-
-app.use(
-  '/api/docs',
-  apiReference({
-    theme: 'purple',
-    url: scalarUrl,
-  })
-);
+// Scalar API Documentation - Se configurará dinámicamente en startServer()
+// (Scalar es un módulo ESM y necesita import dinámico)
 
 // Swagger JSON endpoint (para Scalar)
 app.get('/api/docs.json', (req, res) => {
@@ -2769,16 +2758,8 @@ app.use('/api/storage', storageRoutes);
 app.use('/api/suscripciones', suscripcionesRoutes);
 // Nota: webhooks se registra ANTES de express.json() (ver arriba)
 
-// 404 Handler
-app.use((req, res) => {
-  res.status(404).json({ 
-    error: 'Ruta no encontrada',
-    path: req.path 
-  });
-});
-
-// Error Handler (debe ser el último middleware)
-app.use(errorHandler);
+// 404 Handler y Error Handler se registrarán después de Scalar (dentro de startServer)
+// para que Scalar pueda estar en la ruta raíz sin interferir con las rutas de API
 
 // Inicializar servidor
 async function startServer() {
@@ -2801,6 +2782,48 @@ async function startServer() {
       process.exit(1);
     }
 
+    // Inicializar Scalar API Documentation (import dinámico porque es ESM)
+    // Se registra después de todas las rutas para que las rutas de API tengan prioridad
+    try {
+      const scalarUrl = process.env.API_URL 
+        ? `${process.env.API_URL.replace('/api', '')}/api/docs.json`
+        : `http://localhost:${PORT}/api/docs.json`;
+      
+      const { apiReference } = await import('@scalar/express-api-reference');
+      
+      // Scalar en la ruta raíz (/) - se registra después de todas las rutas de API
+      // para que las rutas /api/* y /health tengan prioridad
+      app.use(
+        '/',
+        apiReference({
+          theme: 'purple',
+          url: scalarUrl,
+        })
+      );
+      
+      // Redirección de /api/docs a / para compatibilidad
+      app.get('/api/docs', (req, res) => {
+        res.redirect('/');
+      });
+      
+      console.log('✅ Scalar API Documentation inicializado en la ruta raíz (/)');
+    } catch (scalarError: any) {
+      console.warn('⚠️ Advertencia: No se pudo inicializar Scalar:', scalarError.message);
+      console.warn('   La documentación de API no estará disponible');
+    }
+
+    // 404 Handler (después de Scalar)
+    // Solo se ejecutará si ninguna ruta previa (incluyendo Scalar) manejó la solicitud
+    app.use((req, res) => {
+      res.status(404).json({ 
+        error: 'Ruta no encontrada',
+        path: req.path 
+      });
+    });
+
+    // Error Handler (debe ser el último middleware)
+    app.use(errorHandler);
+
     // Crear servidor HTTP
     const httpServer = http.createServer(app);
 
@@ -2811,9 +2834,9 @@ async function startServer() {
     httpServer.listen(PORT, () => {
       console.log('\n🚀 Servidor iniciado correctamente');
       console.log(`   URL: http://localhost:${PORT}`);
+      console.log(`   📚 Docs: http://localhost:${PORT}/ (Scalar API Documentation)`);
       console.log(`   API: http://localhost:${PORT}/api`);
       console.log(`   Health: http://localhost:${PORT}/health`);
-      console.log(`   📚 Docs: http://localhost:${PORT}/api/docs`);
       console.log(`   🔌 WebSocket: ws://localhost:${PORT}`);
       console.log(`   Environment: ${process.env.NODE_ENV || 'development'}\n`);
     });
