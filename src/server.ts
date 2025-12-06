@@ -74,36 +74,49 @@ app.use(helmet({
       scriptSrc: [
         "'self'",
         "'unsafe-inline'",
-        "'unsafe-eval'", // Necesario para Scalar
+        "'unsafe-eval'", // Necesario para Scalar y otros frameworks
         "https://cdn.jsdelivr.net",
-        "https://unpkg.com"
+        "https://unpkg.com",
+        "https://cdn.skypack.dev"
       ],
       styleSrc: [
         "'self'",
-        "'unsafe-inline'",
+        "'unsafe-inline'", // Necesario para Scalar
         "https://cdn.jsdelivr.net",
-        "https://unpkg.com"
+        "https://unpkg.com",
+        "https://fonts.googleapis.com"
       ],
       imgSrc: [
         "'self'",
         "data:",
+        "blob:",
         "https:"
       ],
       fontSrc: [
         "'self'",
+        "data:",
         "https://cdn.jsdelivr.net",
         "https://unpkg.com",
         "https://fonts.googleapis.com",
-        "https://fonts.gstatic.com",
-        "data:"
+        "https://fonts.gstatic.com"
       ],
       connectSrc: [
         "'self'",
         "http://localhost:*",
         "https://api.scalar.com",
         "https://cdn.jsdelivr.net",
-        "https://unpkg.com"
-      ]
+        "https://unpkg.com",
+        "wss:", // Para WebSockets
+        "ws:"   // Para WebSockets
+      ],
+      frameSrc: [
+        "'self'"
+      ],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: []
     }
   },
   crossOriginResourcePolicy: { policy: "cross-origin" }
@@ -137,6 +150,12 @@ app.get('/health', (req, res) => {
 
 // Swagger JSON endpoint (para Scalar)
 app.get('/api/docs.json', (req, res) => {
+  // Headers para evitar caché
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  
+  // Asegurar que siempre devolvemos los datos correctos de MenuQR
   const swaggerSpec = {
     openapi: '3.1.0',
     info: {
@@ -2785,9 +2804,13 @@ async function startServer() {
     // Inicializar Scalar API Documentation (import dinámico porque es ESM)
     // Se registra después de todas las rutas para que las rutas de API tengan prioridad
     try {
-      const scalarUrl = process.env.API_URL 
-        ? `${process.env.API_URL.replace('/api', '')}/api/docs.json`
-        : `http://localhost:${PORT}/api/docs.json`;
+      // Construir URL para el spec de OpenAPI
+      const baseUrl = process.env.API_URL 
+        ? process.env.API_URL.replace('/api', '')
+        : `http://localhost:${PORT}`;
+      const scalarUrl = `${baseUrl}/api/docs.json`;
+      
+      console.log(`📄 URL de Scalar OpenAPI spec: ${scalarUrl}`);
       
       // Cargar Scalar usando import dinámico
       // NOTA: TypeScript transformará esto a require() en CommonJS, pero Node.js 18+ 
@@ -2800,8 +2823,22 @@ async function startServer() {
       
       // Scalar en la ruta raíz (/) - se registra después de todas las rutas de API
       // para que las rutas /api/* y /health tengan prioridad
+      // Deshabilitar Helmet CSP para la ruta de Scalar ya que necesita estilos inline
       app.use(
         '/',
+        (req, res, next) => {
+          // CSP permisivo para Scalar - permite estilos inline necesarios
+          res.setHeader('Content-Security-Policy', 
+            "default-src 'self'; " +
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://unpkg.com https://cdn.skypack.dev; " +
+            "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://fonts.googleapis.com; " +
+            "img-src 'self' data: blob: https:; " +
+            "font-src 'self' data: https://fonts.googleapis.com https://fonts.gstatic.com; " +
+            "connect-src 'self' " + baseUrl + " http://localhost:* https://api.scalar.com https://cdn.jsdelivr.net https://unpkg.com; " +
+            "frame-src 'self';"
+          );
+          next();
+        },
         apiReference({
           theme: 'purple',
           url: scalarUrl,
