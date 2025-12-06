@@ -309,7 +309,7 @@ export class MesasService extends BaseService {
       Logger.warn('Error al verificar límites de suscripción', {
         categoria: this.logCategory,
         restauranteId: crearMesaDto.restauranteId,
-        error: error.message,
+        detalle: { error: error.message },
       });
     }
 

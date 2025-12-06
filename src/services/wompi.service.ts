@@ -87,11 +87,11 @@ export class WompiService extends BaseService {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Error desconocido' }));
-        throw new Error(error.message || `Error al crear token en Wompi: ${response.status}`);
+        const errorObj = await response.json().catch(() => ({ message: 'Error desconocido' })) as { message?: string };
+        throw new Error(errorObj.message || `Error al crear token en Wompi: ${response.status}`);
       }
 
-      const data: WompiTokenResponse = await response.json();
+      const data = await response.json() as WompiTokenResponse;
       
       if (!data.data || !data.data.id) {
         throw new Error('Respuesta inválida de Wompi al crear token');
@@ -142,11 +142,11 @@ export class WompiService extends BaseService {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Error desconocido' }));
-        throw new Error(error.message || `Error al crear transacción en Wompi: ${response.status}`);
+        const errorObj = await response.json().catch(() => ({ message: 'Error desconocido' })) as { message?: string };
+        throw new Error(errorObj.message || `Error al crear transacción en Wompi: ${response.status}`);
       }
 
-      const data: WompiTransactionResponse = await response.json();
+      const data = await response.json() as WompiTransactionResponse;
       
       if (!data.data || !data.data.id) {
         throw new Error('Respuesta inválida de Wompi al crear transacción');
@@ -175,11 +175,11 @@ export class WompiService extends BaseService {
       });
 
       if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: 'Error desconocido' }));
-        throw new Error(error.message || `Error al verificar transacción en Wompi: ${response.status}`);
+        const errorObj = await response.json().catch(() => ({ message: 'Error desconocido' })) as { message?: string };
+        throw new Error(errorObj.message || `Error al verificar transacción en Wompi: ${response.status}`);
       }
 
-      const data: WompiTransactionResponse = await response.json();
+      const data = await response.json() as WompiTransactionResponse;
       
       if (!data.data || !data.data.id) {
         throw new Error('Respuesta inválida de Wompi al verificar transacción');
@@ -222,8 +222,7 @@ export class WompiService extends BaseService {
     // Por ahora, solo logueamos que la verificación está disponible
     Logger.info('Verificación de integridad de transacción Wompi disponible', {
       categoria: this.logCategory,
-      transactionId: transaction.data.id,
-      note: 'Implementar según documentación oficial de Wompi',
+      detalle: { transactionId: transaction.data.id, note: 'Implementar según documentación oficial de Wompi' },
     });
   }
 

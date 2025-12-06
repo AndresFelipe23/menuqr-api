@@ -251,10 +251,10 @@ export class SuscripcionesService extends BaseService {
             
             // Verificar que current_period_start y current_period_end existan
             // Si la suscripción está incomplete, estos valores pueden no estar disponibles
-            const subscriptionData = subscription as Stripe.Subscription;
-            if (subscriptionData.current_period_start && subscriptionData.current_period_end) {
-              const inicioPeriodoDate = new Date(subscriptionData.current_period_start * 1000);
-              const finPeriodoDate = new Date(subscriptionData.current_period_end * 1000);
+            const sub = subscription as unknown as Stripe.Subscription;
+            if (sub.current_period_start && sub.current_period_end) {
+              const inicioPeriodoDate = new Date(sub.current_period_start * 1000);
+              const finPeriodoDate = new Date(sub.current_period_end * 1000);
               
               // Validar que las fechas sean válidas
               if (!isNaN(inicioPeriodoDate.getTime()) && !isNaN(finPeriodoDate.getTime())) {

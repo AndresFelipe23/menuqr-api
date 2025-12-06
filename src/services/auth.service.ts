@@ -310,16 +310,18 @@ export class AuthService extends BaseService {
       const { SuscripcionesService } = await import('./suscripciones.service');
       const suscripcionesService = new SuscripcionesService();
       try {
-        await suscripcionesService.crear({
-          restauranteId,
-          tipoPlan: 'free',
-        }, undefined, requestInfo);
+        if (restauranteId) {
+          await suscripcionesService.crear({
+            restauranteId,
+            tipoPlan: 'free',
+          }, undefined, requestInfo);
+        }
       } catch (error: any) {
         // Si falla la creación de suscripción, loguear pero no fallar el registro
         this.logger.warn('Error al crear suscripción FREE automática', {
           categoria: this.logCategory,
           restauranteId,
-          error: error.message,
+          detalle: { error: error.message },
         });
       }
 

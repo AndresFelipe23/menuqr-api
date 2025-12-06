@@ -331,7 +331,7 @@ export class UsuariosService extends BaseService {
 
     this.logger.info('Usuario creado exitosamente', {
       categoria: this.logCategory,
-      restauranteId: crearUsuarioDto.restauranteId,
+      restauranteId: crearUsuarioDto.restauranteId ?? undefined,
       usuarioId: usuarioId,
       entidadTipo: 'usuario',
       entidadId: usuarioMapeado.id,
@@ -506,7 +506,7 @@ export class UsuariosService extends BaseService {
 
     this.logger.info('Usuario actualizado exitosamente', {
       categoria: this.logCategory,
-      restauranteId: usuarioActualizado.restauranteId,
+      restauranteId: usuarioActualizado.restauranteId ?? undefined,
       usuarioId: usuarioIdActualizador,
       entidadTipo: 'usuario',
       entidadId: usuarioId,
@@ -595,7 +595,7 @@ export class UsuariosService extends BaseService {
 
     this.logger.info('Usuario eliminado exitosamente', {
       categoria: this.logCategory,
-      restauranteId: usuario!.restauranteId,
+      restauranteId: usuario!.restauranteId ?? undefined,
       usuarioId: usuarioIdEliminador,
       entidadTipo: 'usuario',
       entidadId: usuarioId,

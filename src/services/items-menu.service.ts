@@ -373,7 +373,7 @@ export class ItemsMenuService extends BaseService {
       this.logger.warn('Error al verificar límites de suscripción', {
         categoria: this.logCategory,
         restauranteId: crearItemMenuDto.restauranteId,
-        error: error.message,
+        detalle: { error: error.message },
       });
     }
 

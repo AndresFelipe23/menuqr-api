@@ -54,7 +54,7 @@ export class RolesService extends BaseService {
         id: rol.id,
         nombre: rol.nombre,
         descripcion: rol.descripcion,
-        permisos: permisos.map(p => ({
+        permisos: permisos.map((p: any) => ({
           id: p.id,
           codigo: p.codigo,
           nombre: p.nombre,
@@ -105,7 +105,7 @@ export class RolesService extends BaseService {
       id: rol.id,
       nombre: rol.nombre,
       descripcion: rol.descripcion,
-      permisos: permisos.map(p => ({
+      permisos: permisos.map((p: any) => ({
         id: p.id,
         codigo: p.codigo,
         nombre: p.nombre,
@@ -321,7 +321,7 @@ export class RolesService extends BaseService {
       ORDER BY modulo, codigo
     `);
 
-    return permisos.map(p => ({
+    return permisos.map((p: any) => ({
       id: p.id,
       codigo: p.codigo,
       nombre: p.nombre,
