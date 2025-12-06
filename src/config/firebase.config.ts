@@ -64,12 +64,12 @@ export function getStorageBucket(): admin.storage.Storage {
  * Configuración de Firebase para el cliente (frontend)
  */
 export const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY || "AIzaSyDrzvcfymaky2rTfx7NWFnME3nB8Vu0XBs",
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN || "proyectnexus-b060b.firebaseapp.com",
-  projectId: process.env.FIREBASE_PROJECT_ID || "proyectnexus-b060b",
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "proyectnexus-b060b.firebasestorage.app",
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || "1008927596866",
-  appId: process.env.FIREBASE_APP_ID || "1:1008927596866:web:2fe5fde61922f8ec1ea8db",
-  measurementId: process.env.FIREBASE_MEASUREMENT_ID || "G-NZ4DQ2E3XC"
+  apiKey: process.env.FIREBASE_API_KEY,
+  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.FIREBASE_PROJECT_ID,
+  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.FIREBASE_APP_ID,
+  measurementId: process.env.FIREBASE_MEASUREMENT_ID
 };
 

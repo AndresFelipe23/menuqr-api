@@ -134,11 +134,15 @@ app.get('/health', (req, res) => {
 });
 
 // Scalar API Documentation
+const scalarUrl = process.env.API_URL 
+  ? `${process.env.API_URL.replace('/api', '')}/api/docs.json`
+  : `http://localhost:${PORT}/api/docs.json`;
+
 app.use(
   '/api/docs',
   apiReference({
     theme: 'purple',
-    url: `http://localhost:${PORT}/api/docs.json`,
+    url: scalarUrl,
   })
 );
 
@@ -153,8 +157,12 @@ app.get('/api/docs.json', (req, res) => {
     },
     servers: [
       {
-        url: `http://localhost:${PORT}`,
-        description: 'Servidor de desarrollo (las rutas ya incluyen /api)',
+        url: process.env.API_URL 
+          ? process.env.API_URL.replace('/api', '')
+          : `http://localhost:${PORT}`,
+        description: process.env.NODE_ENV === 'production' 
+          ? 'Servidor de producción'
+          : 'Servidor de desarrollo (las rutas ya incluyen /api)',
       },
     ],
     tags: [
