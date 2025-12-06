@@ -2805,12 +2805,17 @@ async function startServer() {
     // Se registra después de todas las rutas para que las rutas de API tengan prioridad
     try {
       // Construir URL para el spec de OpenAPI
-      const baseUrl = process.env.API_URL 
-        ? process.env.API_URL.replace('/api', '')
-        : `http://localhost:${PORT}`;
+      // API_URL debe ser algo como: https://apimenusqr.site/api
+      let baseUrl = process.env.API_URL || `http://localhost:${PORT}/api`;
+      
+      // Asegurarse de que baseUrl no termine con /api (para construir la URL completa)
+      baseUrl = baseUrl.replace(/\/api\/?$/, '');
+      
+      // Construir la URL completa del spec
       const scalarUrl = `${baseUrl}/api/docs.json`;
       
       console.log(`📄 URL de Scalar OpenAPI spec: ${scalarUrl}`);
+      console.log(`📄 API_URL desde env: ${process.env.API_URL}`);
       
       // Cargar Scalar usando import dinámico
       // NOTA: TypeScript transformará esto a require() en CommonJS, pero Node.js 18+ 
