@@ -1,0 +1,25 @@
+PASOS PARA INSTALAR Y EJECUTAR EL BACKEND
+===========================================
+
+1. Abre una terminal y navega a la carpeta backend:
+   cd backend
+
+2. Instala las dependencias:
+   bun install
+   (Esto instalará todos los paquetes como tsx, express, typeorm, etc.)
+
+3. Crea el archivo .env:
+   - Copia env.example a .env
+   - Edita .env con tus credenciales de SQL Server
+
+4. Verifica la conexión a la base de datos:
+   bun run test:db
+
+5. Inicia el servidor:
+   bun run dev
+
+Si usas npm en lugar de bun:
+   npm install
+   npm run test:db
+   npm run dev
+

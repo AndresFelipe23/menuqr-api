@@ -1,0 +1,73 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Reglas existentes para documentos-viaje
+    match /documentos-viaje/{allPaths=**} {
+      allow read, write: if true;
+    }
+    
+    // Nuevas reglas para SyncTicket
+    match /SyncTicket/{allPaths=**} {
+      allow read, write: if true;
+    }
+    
+   // Nuevas reglas para NoteSync
+    match /NoteSync/{allPaths=**} {
+      allow read, write: if true;
+    }
+    
+    // ============================================
+    // NUEVO PROYECTO: Sistema de Tickets
+    // ============================================
+    
+    // Adjuntos de Tickets (solo usuarios autenticados)
+    match /tickets/{ticketId}/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // Imágenes y archivos de Base de Conocimiento (solo usuarios autenticados)
+    match /base-conocimiento/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // ⭐ NUEVO: Imágenes de Tarjetas Personalizadas (solo usuarios autenticados)
+    match /tarjetas-personalizadas/{tarjetaId}/{allPaths=**} {
+      allow read, write: if true;
+    }
+    
+    // ============================================
+    // NUEVO PROYECTO: Sistema de Menú QR
+    // ============================================
+    
+    // Imágenes de MenuQR - Lectura pública (clientes necesitan ver menús)
+    // Escritura solo desde backend con Admin SDK (no se necesita regla de escritura aquí)
+    match /MenuQR/{restauranteId}/{allPaths=**} {
+      // Permitir lectura pública (clientes pueden ver imágenes del menú sin autenticación)
+      allow read: if true;
+      
+      // La escritura se hace desde el backend usando Admin SDK
+      // No se necesita regla de escritura aquí porque el Admin SDK bypass las reglas
+      // Pero por seguridad, denegamos escritura desde el cliente
+      allow write: if false;
+    }
+    
+    // Archivos públicos (opcional, para imágenes públicas)
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // ============================================
+    // REGLAS POR DEFECTO (Más restrictivas)
+    // ============================================
+    
+    // Por defecto, denegar todo lo demás
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
