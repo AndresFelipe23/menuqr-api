@@ -187,101 +187,110 @@ export class SuscripcionesService extends BaseService {
           }
         } else {
           // Procesar pago con Stripe (código original)
-          // Obtener precio según período (mensual o anual)
-          const planPrice = getPlanPrice(crearSuscripcionDto.tipoPlan, 'USD', isAnnual);
-        
-        if (!planPrice.priceId) {
-          const priceIdVar = isAnnual 
-            ? `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}_ANNUAL`
-            : `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}`;
+          try {
+            // Obtener precio según período (mensual o anual)
+            const planPrice = getPlanPrice(crearSuscripcionDto.tipoPlan, 'USD', isAnnual);
           
-          this.handleError(
-            `El plan ${crearSuscripcionDto.tipoPlan} (${isAnnual ? 'anual' : 'mensual'}) no tiene un precio configurado en Stripe. ` +
-            `Por favor, configura ${priceIdVar} en las variables de entorno.`,
-            null,
-            500
-          );
-        }
+            if (!planPrice.priceId) {
+              const priceIdVar = isAnnual 
+                ? `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}_ANNUAL`
+                : `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}`;
+              
+              this.handleError(
+                `El plan ${crearSuscripcionDto.tipoPlan} (${isAnnual ? 'anual' : 'mensual'}) no tiene un precio configurado en Stripe. ` +
+                `Por favor, configura ${priceIdVar} en las variables de entorno.`,
+                null,
+                500
+              );
+            }
 
-        // Crear o obtener cliente en Stripe
-        let customer: Stripe.Customer;
-        const customerExistente = await stripe.customers.list({
-          email: restaurante[0].correo,
-          limit: 1,
-        });
+            // Crear o obtener cliente en Stripe
+            let customer: Stripe.Customer;
+            const customerExistente = await stripe.customers.list({
+              email: restaurante[0].correo,
+              limit: 1,
+            });
 
-        if (customerExistente.data.length > 0) {
-          customer = customerExistente.data[0];
-        } else {
-          customer = await stripe.customers.create({
-            email: restaurante[0].correo,
-            name: restaurante[0].nombre,
-            metadata: {
+            if (customerExistente.data.length > 0) {
+              customer = customerExistente.data[0];
+            } else {
+              customer = await stripe.customers.create({
+                email: restaurante[0].correo,
+                name: restaurante[0].nombre,
+                metadata: {
+                  restauranteId: crearSuscripcionDto.restauranteId,
+                },
+              });
+            }
+
+            stripeCustomerId = customer.id;
+
+            // Adjuntar método de pago al cliente
+            await stripe.paymentMethods.attach(crearSuscripcionDto.paymentMethodId, {
+              customer: customer.id,
+            });
+
+            // Establecer como método de pago por defecto
+            await stripe.customers.update(customer.id, {
+              invoice_settings: {
+                default_payment_method: crearSuscripcionDto.paymentMethodId,
+              },
+            });
+
+            // Crear suscripción en Stripe con el price_id (mensual o anual)
+            // Stripe intentará cobrar automáticamente con el método de pago por defecto
+            const subscription = await stripe.subscriptions.create({
+              customer: customer.id,
+              items: [{ price: planPrice.priceId }],
+              payment_settings: { save_default_payment_method: 'on_subscription' },
+              expand: ['latest_invoice', 'latest_invoice.payment_intent'],
+            });
+
+            stripeSubscriptionId = subscription.id;
+            estado = subscription.status === 'trialing' ? 'trialing' : 'active';
+            
+            // Verificar que current_period_start y current_period_end existan
+            // Si la suscripción está incomplete, estos valores pueden no estar disponibles
+            if (subscription.current_period_start && subscription.current_period_end) {
+              const inicioPeriodoDate = new Date(subscription.current_period_start * 1000);
+              const finPeriodoDate = new Date(subscription.current_period_end * 1000);
+              
+              // Validar que las fechas sean válidas
+              if (!isNaN(inicioPeriodoDate.getTime()) && !isNaN(finPeriodoDate.getTime())) {
+                // Convertir a formato SQL Server (YYYY-MM-DD HH:mm:ss.sss)
+                inicioPeriodo = inicioPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+                finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+              } else {
+                // Si las fechas son inválidas, usar fecha actual y calcular fin de período
+                const fechaActualDate = new Date();
+                inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
+                const finPeriodoDate = new Date(fechaActualDate);
+                finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
+                finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+              }
+            } else {
+              // Si no hay períodos definidos (suscripción incomplete), usar fecha actual
+              const fechaActualDate = new Date();
+              inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
+              const finPeriodoDate = new Date(fechaActualDate);
+              finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
+              finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+            }
+          } catch (error: any) {
+            Logger.error('Error al crear suscripción en Stripe', error instanceof Error ? error : new Error(String(error)), {
+              categoria: this.logCategory,
               restauranteId: crearSuscripcionDto.restauranteId,
-            },
-          });
-        }
-
-        stripeCustomerId = customer.id;
-
-        // Adjuntar método de pago al cliente
-        await stripe.paymentMethods.attach(crearSuscripcionDto.paymentMethodId, {
-          customer: customer.id,
-        });
-
-        // Establecer como método de pago por defecto
-        await stripe.customers.update(customer.id, {
-          invoice_settings: {
-            default_payment_method: crearSuscripcionDto.paymentMethodId,
-          },
-        });
-
-        // Crear suscripción en Stripe con el price_id (mensual o anual)
-        // Stripe intentará cobrar automáticamente con el método de pago por defecto
-        const subscription = await stripe.subscriptions.create({
-          customer: customer.id,
-          items: [{ price: planPrice.priceId }],
-          payment_settings: { save_default_payment_method: 'on_subscription' },
-          expand: ['latest_invoice', 'latest_invoice.payment_intent'],
-        });
-
-        stripeSubscriptionId = subscription.id;
-        estado = subscription.status === 'trialing' ? 'trialing' : 'active';
-        
-        // Verificar que current_period_start y current_period_end existan
-        // Si la suscripción está incomplete, estos valores pueden no estar disponibles
-        if (subscription.current_period_start && subscription.current_period_end) {
-          const inicioPeriodoDate = new Date(subscription.current_period_start * 1000);
-          const finPeriodoDate = new Date(subscription.current_period_end * 1000);
-          
-          // Validar que las fechas sean válidas
-          if (!isNaN(inicioPeriodoDate.getTime()) && !isNaN(finPeriodoDate.getTime())) {
-            // Convertir a formato SQL Server (YYYY-MM-DD HH:mm:ss.sss)
-            inicioPeriodo = inicioPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
-            finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
-          } else {
-            // Si las fechas son inválidas, usar fecha actual y calcular fin de período
-            const fechaActualDate = new Date();
-            inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
-            const finPeriodoDate = new Date(fechaActualDate);
-            finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
-            finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+            });
+            this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
           }
-        } else {
-          // Si no hay períodos definidos (suscripción incomplete), usar fecha actual
-          const fechaActualDate = new Date();
-          inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
-          const finPeriodoDate = new Date(fechaActualDate);
-          finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
-          finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
         }
       } catch (error: any) {
-        Logger.error('Error al crear suscripción en Stripe', error instanceof Error ? error : new Error(String(error)), {
+        // Error general al procesar el pago (ya sea Wompi o Stripe)
+        Logger.error('Error al procesar el pago', error instanceof Error ? error : new Error(String(error)), {
           categoria: this.logCategory,
           restauranteId: crearSuscripcionDto.restauranteId,
         });
-          this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
-        }
+        this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
       }
     }
 
