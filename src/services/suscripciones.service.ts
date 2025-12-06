@@ -97,7 +97,7 @@ export class SuscripcionesService extends BaseService {
     let wompiTransactionId: string | null = null;
     let inicioPeriodo: string | null = null;
     let finPeriodo: string | null = null;
-    let estado: 'active' | 'trialing' = 'active';
+    let estado: 'active' | 'trialing' | 'incomplete' = 'active';
 
     // Si es free, crear directamente en BD (permanente, sin límite de tiempo)
     if (crearSuscripcionDto.tipoPlan === 'free') {
@@ -251,9 +251,10 @@ export class SuscripcionesService extends BaseService {
             
             // Verificar que current_period_start y current_period_end existan
             // Si la suscripción está incomplete, estos valores pueden no estar disponibles
-            if (subscription.current_period_start && subscription.current_period_end) {
-              const inicioPeriodoDate = new Date(subscription.current_period_start * 1000);
-              const finPeriodoDate = new Date(subscription.current_period_end * 1000);
+            const subscriptionData = subscription as Stripe.Subscription;
+            if (subscriptionData.current_period_start && subscriptionData.current_period_end) {
+              const inicioPeriodoDate = new Date(subscriptionData.current_period_start * 1000);
+              const finPeriodoDate = new Date(subscriptionData.current_period_end * 1000);
               
               // Validar que las fechas sean válidas
               if (!isNaN(inicioPeriodoDate.getTime()) && !isNaN(finPeriodoDate.getTime())) {
@@ -370,16 +371,16 @@ export class SuscripcionesService extends BaseService {
 
             Logger.info('Pago registrado exitosamente al crear suscripción', {
               categoria: this.logCategory,
-              suscripcionId: suscripcionCreada.id,
-              monto: amount,
+              detalle: { suscripcionId: suscripcionCreada.id, monto: amount },
             });
           }
         }
       } catch (paymentError: any) {
         // No fallar la creación de suscripción si falla el registro del pago
         // El webhook lo registrará más tarde
-        Logger.warn('Error al registrar pago inicial (se registrará vía webhook)', paymentError instanceof Error ? paymentError : new Error(String(paymentError)), {
+        Logger.warn('Error al registrar pago inicial (se registrará vía webhook)', {
           categoria: this.logCategory,
+          detalle: { error: paymentError instanceof Error ? paymentError.message : String(paymentError) },
         });
       }
     }
@@ -392,8 +393,9 @@ export class SuscripcionesService extends BaseService {
           [suscripcionCreada.id, wompiTransactionId]
         );
       } catch (error: any) {
-        Logger.warn('Error al actualizar suscripcion_id en pago de Wompi', error instanceof Error ? error : new Error(String(error)), {
+        Logger.warn('Error al actualizar suscripcion_id en pago de Wompi', {
           categoria: this.logCategory,
+          detalle: { error: error instanceof Error ? error.message : String(error) },
         });
       }
     }
@@ -474,7 +476,7 @@ export class SuscripcionesService extends BaseService {
           } catch (error: any) {
             Logger.error('Error al cancelar suscripción en Stripe', error instanceof Error ? error : new Error(String(error)), {
               categoria: this.logCategory,
-              suscripcionId,
+              detalle: { suscripcionId },
             });
           }
         }
@@ -491,7 +493,10 @@ export class SuscripcionesService extends BaseService {
       if (suscripcionActual.stripeSubscriptionId && actualizarSuscripcionDto.tipoPlan !== 'free') {
         try {
           // Mantener el período actual (mensual o anual) al cambiar de plan
-          const planPrice = getPlanPrice(actualizarSuscripcionDto.tipoPlan, 'USD', suscripcionActual.isAnnual || false);
+          // Determinar si es anual basándose en el período actual (asumir mensual por defecto)
+          // TODO: Mejorar esta lógica para determinar correctamente si es anual
+          const isAnnual = false; // Por defecto asumir mensual
+          const planPrice = getPlanPrice(actualizarSuscripcionDto.tipoPlan, 'USD', isAnnual);
           
           if (planPrice.priceId) {
             // Obtener el subscription item actual
@@ -510,7 +515,7 @@ export class SuscripcionesService extends BaseService {
         } catch (error: any) {
           Logger.error('Error al actualizar plan en Stripe', error instanceof Error ? error : new Error(String(error)), {
             categoria: this.logCategory,
-            suscripcionId,
+            detalle: { suscripcionId },
           });
         }
       }

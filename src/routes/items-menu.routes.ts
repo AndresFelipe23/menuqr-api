@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { ItemsMenuController } from '../controllers/items-menu.controller';
 import { authenticate } from '../middlewares/auth.middleware';
-import { validateDto } from '../middlewares/validation.middleware';
+import { validateDto, validateQuery } from '../middlewares/validation.middleware';
 import { CrearItemMenuDto, ActualizarItemMenuDto, QueryItemMenuDto } from '../dto';
 
 const router = Router();
@@ -35,7 +35,7 @@ router.get(
 router.get(
   '/',
   authenticate,
-  validateDto(QueryItemMenuDto, 'query'),
+  validateQuery(QueryItemMenuDto),
   itemsMenuController.obtenerTodos.bind(itemsMenuController)
 );
 
@@ -80,7 +80,7 @@ router.get(
 router.post(
   '/',
   authenticate,
-  validateDto(CrearItemMenuDto, 'body'),
+  validateDto(CrearItemMenuDto),
   itemsMenuController.crear.bind(itemsMenuController)
 );
 
@@ -92,7 +92,7 @@ router.post(
 router.put(
   '/:id',
   authenticate,
-  validateDto(ActualizarItemMenuDto, 'body'),
+  validateDto(ActualizarItemMenuDto),
   itemsMenuController.actualizar.bind(itemsMenuController)
 );
 

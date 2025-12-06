@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PedidosController } from '../controllers/pedidos.controller';
 import { authenticate } from '../middlewares/auth.middleware';
-import { validateDto } from '../middlewares/validation.middleware';
+import { validateDto, validateQuery } from '../middlewares/validation.middleware';
 import { CrearPedidoDto, ActualizarPedidoDto, QueryPedidoDto } from '../dto';
 
 const router = Router();
@@ -15,7 +15,7 @@ const pedidosController = new PedidosController();
 router.get(
   '/',
   authenticate,
-  validateDto(QueryPedidoDto, 'query'),
+  validateQuery(QueryPedidoDto),
   pedidosController.obtenerTodos.bind(pedidosController)
 );
 
@@ -70,7 +70,7 @@ router.get(
  */
 router.post(
   '/public',
-  validateDto(CrearPedidoDto, 'body'),
+  validateDto(CrearPedidoDto),
   pedidosController.crearPublico.bind(pedidosController)
 );
 
@@ -82,7 +82,7 @@ router.post(
 router.post(
   '/',
   authenticate,
-  validateDto(CrearPedidoDto, 'body'),
+  validateDto(CrearPedidoDto),
   pedidosController.crear.bind(pedidosController)
 );
 
@@ -94,7 +94,7 @@ router.post(
 router.put(
   '/:id',
   authenticate,
-  validateDto(ActualizarPedidoDto, 'body'),
+  validateDto(ActualizarPedidoDto),
   pedidosController.actualizar.bind(pedidosController)
 );
 

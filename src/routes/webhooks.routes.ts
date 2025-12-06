@@ -66,7 +66,7 @@ router.post('/stripe', express.raw({ type: 'application/json' }), async (req: Re
   } catch (error: any) {
     Logger.error('Error al procesar webhook de Stripe', error instanceof Error ? error : new Error(String(error)), {
       categoria: LogCategory.SISTEMA,
-      eventType: event.type,
+      detalle: { eventType: event.type },
     });
     res.status(500).json({ error: 'Error al procesar webhook' });
   }
@@ -91,8 +91,7 @@ async function handleSubscriptionUpdate(subscription: any) {
   if (!suscripcion || suscripcion.length === 0) {
     Logger.warn('Webhook de Stripe: Suscripción no encontrada', {
       categoria: LogCategory.SISTEMA,
-      stripeCustomerId,
-      stripeSubscriptionId,
+      detalle: { stripeCustomerId, stripeSubscriptionId },
     });
     return;
   }
@@ -120,8 +119,7 @@ async function handleSubscriptionUpdate(subscription: any) {
 
   Logger.info('Webhook de Stripe: Suscripción actualizada', {
     categoria: LogCategory.SISTEMA,
-    suscripcionId: suscripcion[0].id,
-    estado: status,
+    detalle: { suscripcionId: suscripcion[0].id, estado: status },
   });
 }
 
@@ -159,7 +157,7 @@ async function handleSubscriptionDeleted(subscription: any) {
 
   Logger.info('Webhook de Stripe: Suscripción cancelada', {
     categoria: LogCategory.SISTEMA,
-    suscripcionId: suscripcion[0].id,
+    detalle: { suscripcionId: suscripcion[0].id },
   });
 }
 
@@ -204,8 +202,7 @@ async function handlePaymentSucceeded(invoice: any) {
 
   Logger.info('Webhook de Stripe: Pago registrado exitosamente', {
     categoria: LogCategory.SISTEMA,
-    suscripcionId: suscripcion[0].id,
-    monto: amount,
+    detalle: { suscripcionId: suscripcion[0].id, monto: amount },
   });
 }
 
@@ -244,8 +241,7 @@ async function handlePaymentFailed(invoice: any) {
 
   Logger.warn('Webhook de Stripe: Pago fallido', {
     categoria: LogCategory.SISTEMA,
-    suscripcionId: suscripcion[0].id,
-    stripeInvoiceId,
+    detalle: { suscripcionId: suscripcion[0].id, stripeInvoiceId },
   });
 }
 
@@ -328,7 +324,7 @@ async function handleWompiTransactionUpdate(transaction: any) {
   if (!suscripcion || suscripcion.length === 0) {
     Logger.warn('Webhook de Wompi: Suscripción no encontrada para transacción', {
       categoria: LogCategory.SISTEMA,
-      transactionId,
+      detalle: { transactionId },
     });
     return;
   }
@@ -395,16 +391,14 @@ async function handleWompiTransactionUpdate(transaction: any) {
 
       Logger.info('Webhook de Wompi: Pago registrado exitosamente', {
         categoria: LogCategory.SISTEMA,
-        suscripcionId: suscripcion[0].id,
-        monto: amount,
+        detalle: { suscripcionId: suscripcion[0].id, monto: amount },
       });
     }
   }
 
   Logger.info('Webhook de Wompi: Transacción actualizada', {
     categoria: LogCategory.SISTEMA,
-    suscripcionId: suscripcion[0].id,
-    estado: status,
+    detalle: { suscripcionId: suscripcion[0].id, estado: status },
   });
 }
 

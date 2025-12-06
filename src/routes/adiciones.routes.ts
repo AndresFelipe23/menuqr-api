@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AdicionesController } from '../controllers/adiciones.controller';
 import { authenticate } from '../middlewares/auth.middleware';
-import { validateDto } from '../middlewares/validation.middleware';
+import { validateDto, validateQuery } from '../middlewares/validation.middleware';
 import { CrearAdicionDto, ActualizarAdicionDto, QueryAdicionDto } from '../dto';
 
 const router = Router();
@@ -15,7 +15,7 @@ const adicionesController = new AdicionesController();
 router.get(
   '/',
   authenticate,
-  validateDto(QueryAdicionDto, 'query'),
+  validateQuery(QueryAdicionDto),
   adicionesController.obtenerTodos.bind(adicionesController)
 );
 
@@ -49,7 +49,7 @@ router.get(
 router.post(
   '/',
   authenticate,
-  validateDto(CrearAdicionDto, 'body'),
+  validateDto(CrearAdicionDto),
   adicionesController.crear.bind(adicionesController)
 );
 
@@ -61,7 +61,7 @@ router.post(
 router.put(
   '/:id',
   authenticate,
-  validateDto(ActualizarAdicionDto, 'body'),
+  validateDto(ActualizarAdicionDto),
   adicionesController.actualizar.bind(adicionesController)
 );
 

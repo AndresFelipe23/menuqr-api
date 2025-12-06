@@ -95,7 +95,7 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
       if (error instanceof jwt.JsonWebTokenError) {
         Logger.warn('Token JWT inválido en WebSocket', {
           categoria: LogCategory.AUTHENTICACION,
-          error: error.message,
+          detalle: { error: error.message },
         });
         return next(new Error('Token inválido'));
       }
@@ -107,9 +107,8 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
         return next(new Error('Token expirado'));
       }
 
-      Logger.error('Error en autenticación WebSocket', {
+      Logger.error('Error en autenticación WebSocket', error instanceof Error ? error : new Error(String(error)), {
         categoria: LogCategory.AUTHENTICACION,
-        error: error instanceof Error ? error.message : String(error),
       });
       next(new Error('Error de autenticación'));
     }
@@ -127,7 +126,7 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
       categoria: LogCategory.SISTEMA,
       usuarioId: user.id,
       restauranteId: user.restauranteId,
-      socketId: socket.id,
+      detalle: { socketId: socket.id },
     });
 
     // Unirse a la sala del restaurante
@@ -138,7 +137,7 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
         categoria: LogCategory.SISTEMA,
         usuarioId: user.id,
         restauranteId: user.restauranteId,
-        socketId: socket.id,
+        detalle: { socketId: socket.id },
       });
     }
 
@@ -157,19 +156,17 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
         categoria: LogCategory.SISTEMA,
         usuarioId: user.id,
         restauranteId: user.restauranteId,
-        socketId: socket.id,
-        razon: reason,
+        detalle: { socketId: socket.id, razon: reason },
       });
     });
 
     // Manejar errores
     socket.on('error', (error) => {
-      Logger.error('Error en WebSocket', {
+      Logger.error('Error en WebSocket', error instanceof Error ? error : new Error(String(error)), {
         categoria: LogCategory.SISTEMA,
         usuarioId: user.id,
         restauranteId: user.restauranteId,
-        socketId: socket.id,
-        error: error instanceof Error ? error.message : String(error),
+        detalle: { socketId: socket.id },
       });
     });
   });

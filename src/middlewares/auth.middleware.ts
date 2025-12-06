@@ -72,7 +72,7 @@ export async function authenticate(
         metodoHttp: req.method,
         ruta: req.path,
         direccionIp: req.ip,
-        error: error.message,
+        detalle: { error: error.message },
       });
       throw new AppError('Token inválido. Por favor, inicia sesión nuevamente.', 401);
     }
@@ -93,12 +93,11 @@ export async function authenticate(
     }
 
     // Para otros errores, lanzar un error genérico
-    Logger.error('Error inesperado en autenticación', {
+    Logger.error('Error inesperado en autenticación', error instanceof Error ? error : new Error(String(error)), {
       categoria: LogCategory.AUTHENTICACION,
       metodoHttp: req.method,
       ruta: req.path,
       direccionIp: req.ip,
-      error: error instanceof Error ? error.message : String(error),
     });
     throw new AppError('Error de autenticación', 401);
   }
