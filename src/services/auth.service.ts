@@ -250,101 +250,104 @@ export class AuthService extends BaseService {
     let rolId: string | null = null;
     let esRegistroNuevoRestaurante = false;
 
-    // CASO 1: Registro público - Crear restaurante + usuario administrador
+    // CASO 1: Registro público - Puede crear restaurante + usuario administrador O solo usuario
     if (!registerDto.restauranteId) {
-      // Validar que vengan los datos del restaurante
-      if (!registerDto.nombreRestaurante || !registerDto.slugRestaurante) {
-        this.handleError('Para registrarse como nuevo restaurante, debe proporcionar nombreRestaurante y slugRestaurante', null, 400);
-      }
+      // Si vienen los datos del restaurante, crear restaurante + usuario administrador
+      // Si NO vienen, solo crear usuario (se creará el restaurante después)
+      const tieneDatosRestaurante = registerDto.nombreRestaurante && registerDto.slugRestaurante;
 
-      // Verificar que el slug del restaurante no exista
-      const slugExiste = await AppDataSource.query(
-        `SELECT id FROM restaurantes WHERE slug = @0 AND fecha_eliminacion IS NULL`,
-        [registerDto.slugRestaurante]
-      );
+      if (tieneDatosRestaurante) {
+        // Verificar que el slug del restaurante no exista
+        const slugExiste = await AppDataSource.query(
+          `SELECT id FROM restaurantes WHERE slug = @0 AND fecha_eliminacion IS NULL`,
+          [registerDto.slugRestaurante]
+        );
 
-      if (slugExiste && slugExiste.length > 0) {
-        this.logger.error('Registro fallido: Slug de restaurante ya existe', new Error('Slug duplicado'), {
-          categoria: this.logCategory,
-          metodoHttp: requestInfo?.metodoHttp,
-          ruta: requestInfo?.ruta,
-          endpoint: requestInfo?.endpoint,
-          direccionIp: requestInfo?.direccionIp,
-          agenteUsuario: requestInfo?.agenteUsuario,
-          codigoEstadoHttp: 409,
-          codigoError: 'RESTAURANT_SLUG_EXISTS',
-          detalle: { slug: registerDto.slugRestaurante }
-        });
-        this.handleError('Ya existe un restaurante con ese slug', null, 409);
-      }
-
-      // Verificar que el email no esté en uso como correo de restaurante
-      const emailRestauranteExiste = await AppDataSource.query(
-        `SELECT id FROM restaurantes WHERE correo = @0 AND fecha_eliminacion IS NULL`,
-        [registerDto.email]
-      );
-
-      if (emailRestauranteExiste && emailRestauranteExiste.length > 0) {
-        this.handleError('El correo electrónico ya está registrado como restaurante', null, 409);
-      }
-
-      // Crear restaurante con fechas en hora local de Montería
-      const { getMonteriaLocalDate } = await import('../utils/date.utils');
-      const fechaActual = getMonteriaLocalDate();
-      
-      const restauranteResult = await AppDataSource.query(
-        `INSERT INTO restaurantes (nombre, slug, correo, activo, estado_suscripcion, fecha_creacion, fecha_actualizacion)
-         OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.slug
-         VALUES (@0, @1, @2, 1, 'free', @3, @3)`,
-        [registerDto.nombreRestaurante, registerDto.slugRestaurante, registerDto.email, fechaActual]
-      );
-
-      if (!restauranteResult || restauranteResult.length === 0) {
-        this.handleError('Error al crear restaurante', null, 500);
-      }
-
-      restauranteId = restauranteResult[0].id;
-      esRegistroNuevoRestaurante = true;
-
-      // Crear suscripción FREE automáticamente (permanente)
-      const { SuscripcionesService } = await import('./suscripciones.service');
-      const suscripcionesService = new SuscripcionesService();
-      try {
-        if (restauranteId) {
-          await suscripcionesService.crear({
-            restauranteId,
-            tipoPlan: 'free',
-          }, undefined, requestInfo);
+        if (slugExiste && slugExiste.length > 0) {
+          this.logger.error('Registro fallido: Slug de restaurante ya existe', new Error('Slug duplicado'), {
+            categoria: this.logCategory,
+            metodoHttp: requestInfo?.metodoHttp,
+            ruta: requestInfo?.ruta,
+            endpoint: requestInfo?.endpoint,
+            direccionIp: requestInfo?.direccionIp,
+            agenteUsuario: requestInfo?.agenteUsuario,
+            codigoEstadoHttp: 409,
+            codigoError: 'RESTAURANT_SLUG_EXISTS',
+            detalle: { slug: registerDto.slugRestaurante }
+          });
+          this.handleError('Ya existe un restaurante con ese slug', null, 409);
         }
-      } catch (error: any) {
-        // Si falla la creación de suscripción, loguear pero no fallar el registro
-        this.logger.warn('Error al crear suscripción FREE automática', {
+
+        // Verificar que el email no esté en uso como correo de restaurante
+        const emailRestauranteExiste = await AppDataSource.query(
+          `SELECT id FROM restaurantes WHERE correo = @0 AND fecha_eliminacion IS NULL`,
+          [registerDto.email]
+        );
+
+        if (emailRestauranteExiste && emailRestauranteExiste.length > 0) {
+          this.handleError('El correo electrónico ya está registrado como restaurante', null, 409);
+        }
+
+        // Crear restaurante con fechas en hora local de Montería
+        const { getMonteriaLocalDate } = await import('../utils/date.utils');
+        const fechaActual = getMonteriaLocalDate();
+        
+        const restauranteResult = await AppDataSource.query(
+          `INSERT INTO restaurantes (nombre, slug, correo, activo, estado_suscripcion, fecha_creacion, fecha_actualizacion)
+           OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.slug
+           VALUES (@0, @1, @2, 1, 'free', @3, @3)`,
+          [registerDto.nombreRestaurante, registerDto.slugRestaurante, registerDto.email, fechaActual]
+        );
+
+        if (!restauranteResult || restauranteResult.length === 0) {
+          this.handleError('Error al crear restaurante', null, 500);
+        }
+
+        restauranteId = restauranteResult[0].id;
+        esRegistroNuevoRestaurante = true;
+
+        // Crear suscripción FREE automáticamente (permanente)
+        const { SuscripcionesService } = await import('./suscripciones.service');
+        const suscripcionesService = new SuscripcionesService();
+        try {
+          if (restauranteId) {
+            await suscripcionesService.crear({
+              restauranteId,
+              tipoPlan: 'free',
+            }, undefined, requestInfo);
+          }
+        } catch (error: any) {
+          // Si falla la creación de suscripción, loguear pero no fallar el registro
+          this.logger.warn('Error al crear suscripción FREE automática', {
+            categoria: this.logCategory,
+            restauranteId,
+            detalle: { error: error.message },
+          });
+        }
+
+        // Obtener rol "Administrador" para asignarlo al usuario
+        const adminRole = await AppDataSource.query(
+          `SELECT id FROM roles WHERE nombre = 'Administrador'`
+        );
+
+        if (!adminRole || adminRole.length === 0) {
+          this.handleError('El rol Administrador no existe en el sistema', null, 500);
+        }
+
+        rolId = adminRole[0].id;
+
+        this.logger.info('Restaurante creado durante registro', {
           categoria: this.logCategory,
           restauranteId,
-          detalle: { error: error.message },
+          detalle: {
+            nombre: registerDto.nombreRestaurante,
+            slug: registerDto.slugRestaurante,
+            email: registerDto.email
+          }
         });
       }
-
-      // Obtener rol "Administrador" para asignarlo al usuario
-      const adminRole = await AppDataSource.query(
-        `SELECT id FROM roles WHERE nombre = 'Administrador'`
-      );
-
-      if (!adminRole || adminRole.length === 0) {
-        this.handleError('El rol Administrador no existe en el sistema', null, 500);
-      }
-
-      rolId = adminRole[0].id;
-
-      this.logger.info('Restaurante creado durante registro', {
-        categoria: this.logCategory,
-        restauranteId,
-        detalle: {
-          nombre: registerDto.nombreRestaurante,
-          slug: registerDto.slugRestaurante,
-          email: registerDto.email
-        }
-      });
+      // Si no tiene datos de restaurante, restauranteId permanece undefined y rolId permanece null
+      // El usuario podrá crear el restaurante después del registro
 
     } else {
       // CASO 2: Un administrador está creando usuarios para su restaurante

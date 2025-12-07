@@ -8,6 +8,13 @@ const router = Router();
 const restaurantsController = new RestaurantsController();
 
 /**
+ * @route GET /api/restaurants/public
+ * @description Lista todos los restaurantes activos (público, no requiere autenticación)
+ * @access Público
+ */
+router.get('/public', restaurantsController.obtenerTodosPublicos);
+
+/**
  * @route GET /api/restaurants/public/:slug
  * @description Obtiene un restaurante por slug (público, no requiere autenticación)
  * @access Público

@@ -239,6 +239,30 @@ export class RestaurantsService extends BaseService {
   }
 
   /**
+   * Obtiene todos los restaurantes activos (público, solo información básica)
+   */
+  async obtenerTodosPublicos(): Promise<Restaurante[]> {
+    const restaurantes = await AppDataSource.query(`
+      SELECT 
+        r.id, r.nombre, r.slug, 
+        NULL as correo, r.telefono,
+        r.biografia, r.imagen_perfil_url, r.imagen_portada_url,
+        r.color_tema, r.color_texto, r.color_fondo, r.familia_fuente,
+        r.mostrar_menu, r.mostrar_enlaces, r.mostrar_contacto, r.habilitar_pedidos,
+        r.direccion, r.ciudad, r.estado_provincia, r.pais, r.codigo_postal,
+        r.latitud, r.longitud,
+        r.zona_horaria, r.moneda, r.idioma,
+        r.activo, r.estado_suscripcion,
+        r.fecha_creacion, r.fecha_actualizacion, r.fecha_eliminacion
+      FROM restaurantes r
+      WHERE r.fecha_eliminacion IS NULL AND r.activo = 1
+      ORDER BY r.nombre ASC
+    `);
+
+    return restaurantes.map((r: any) => this.mapToRestaurante(r));
+  }
+
+  /**
    * Crea un nuevo restaurante
    */
   async crear(
@@ -332,6 +356,67 @@ export class RestaurantsService extends BaseService {
 
     const nuevoRestaurante = resultado[0];
     const restauranteMapeado = this.mapToRestaurante(nuevoRestaurante);
+
+    // Si el usuario que crea el restaurante no tiene restaurante asignado, asociarlo y darle rol de Administrador
+    if (usuarioId) {
+      const usuarioActual = await AppDataSource.query(
+        `SELECT id, restaurante_id FROM usuarios WHERE id = @0 AND fecha_eliminacion IS NULL`,
+        [usuarioId]
+      );
+
+      if (usuarioActual && usuarioActual.length > 0 && !usuarioActual[0].restaurante_id) {
+        // Actualizar el usuario con el restaurante_id
+        await AppDataSource.query(
+          `UPDATE usuarios SET restaurante_id = @0, fecha_actualizacion = @1 WHERE id = @2`,
+          [restauranteMapeado.id, fechaActual, usuarioId]
+        );
+
+        // Obtener el rol "Administrador"
+        const adminRole = await AppDataSource.query(
+          `SELECT id FROM roles WHERE nombre = 'Administrador'`
+        );
+
+        if (adminRole && adminRole.length > 0) {
+          // Verificar si el usuario ya tiene un rol asignado para este restaurante
+          const rolExistente = await AppDataSource.query(
+            `SELECT id FROM roles_usuario WHERE usuario_id = @0 AND restaurante_id = @1`,
+            [usuarioId, restauranteMapeado.id]
+          );
+
+          if (!rolExistente || rolExistente.length === 0) {
+            // Asignar el rol de Administrador
+            await AppDataSource.query(
+              `INSERT INTO roles_usuario (usuario_id, rol_id, restaurante_id) VALUES (@0, @1, @2)`,
+              [usuarioId, adminRole[0].id, restauranteMapeado.id]
+            );
+
+            this.logger.info('Usuario asociado al restaurante y rol de Administrador asignado', {
+              categoria: this.logCategory,
+              usuarioId,
+              restauranteId: restauranteMapeado.id,
+              rolId: adminRole[0].id,
+            });
+          }
+        }
+      }
+    }
+
+    // Crear suscripción FREE automáticamente
+    const { SuscripcionesService } = await import('./suscripciones.service');
+    const suscripcionesService = new SuscripcionesService();
+    try {
+      await suscripcionesService.crear({
+        restauranteId: restauranteMapeado.id,
+        tipoPlan: 'free',
+      }, usuarioId, requestInfo);
+    } catch (error: any) {
+      // Si falla la creación de suscripción, loguear pero no fallar la creación del restaurante
+      this.logger.warn('Error al crear suscripción FREE automática', {
+        categoria: this.logCategory,
+        restauranteId: restauranteMapeado.id,
+        detalle: { error: error.message },
+      });
+    }
 
     this.logger.info('Restaurante creado exitosamente', {
       categoria: this.logCategory,

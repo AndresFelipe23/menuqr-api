@@ -35,35 +35,51 @@ const PORT = process.env.PORT || 5290;
 const API_URL = process.env.API_URL || `http://localhost:${PORT}/api`;
 
 // Configurar CORS ANTES de helmet para evitar conflictos
+const isProduction = process.env.NODE_ENV === 'production';
 const corsOrigins = process.env.CORS_ORIGIN 
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
   : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:4321'];
 
+// En desarrollo, asegurar que los localhost comunes estén incluidos
+const defaultDevOrigins = ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:4321'];
+const finalCorsOrigins = isProduction
+  ? corsOrigins
+  : [...new Set([...corsOrigins, ...defaultDevOrigins])]; // Combinar y eliminar duplicados
+
+// Log de configuración de CORS para debugging
+if (!isProduction) {
+  console.log('🔓 CORS configurado en modo desarrollo - permitiendo todos los orígenes');
+  console.log(`📍 Orígenes configurados: ${finalCorsOrigins.join(', ')}`);
+}
+
 app.use(cors({
   origin: (origin, callback) => {
     // Permitir requests sin origin (como mobile apps o curl)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      return callback(null, true);
+    }
     
     // En producción, solo permitir orígenes configurados
-    if (process.env.NODE_ENV === 'production') {
-      if (corsOrigins.includes(origin)) {
+    if (isProduction) {
+      if (finalCorsOrigins.includes(origin) || finalCorsOrigins.includes('*')) {
         callback(null, true);
       } else {
+        console.warn(`❌ CORS bloqueado en producción: ${origin}`);
         callback(new Error('Not allowed by CORS'));
       }
     } else {
-      // En desarrollo, permitir todos (o los configurados)
-      if (corsOrigins.includes(origin) || corsOrigins.includes('*')) {
-        callback(null, true);
-      } else {
-        callback(null, true); // Permitir todos en desarrollo
+      // En desarrollo, permitir todos los orígenes (más permisivo)
+      if (!isProduction) {
+        console.log(`✅ CORS permitido (desarrollo): ${origin}`);
       }
+      callback(null, true);
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Length', 'Content-Type']
+  exposedHeaders: ['Content-Length', 'Content-Type'],
+  optionsSuccessStatus: 200 // Para navegadores legacy
 }));
 
 // Middlewares de seguridad

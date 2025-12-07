@@ -54,6 +54,14 @@ export class RestaurantsController extends BaseController {
   });
 
   /**
+   * Obtiene todos los restaurantes activos (público)
+   */
+  public obtenerTodosPublicos = this.asyncHandler(async (req, res) => {
+    const restaurantes = await this.restaurantsService.obtenerTodosPublicos();
+    return this.responseUtil.success(res, restaurantes, 'Restaurantes obtenidos exitosamente', 200);
+  });
+
+  /**
    * Crea un nuevo restaurante
    */
   public crear = this.asyncHandler(async (req: AuthenticatedRequest, res) => {

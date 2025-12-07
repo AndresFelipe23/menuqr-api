@@ -8,6 +8,7 @@ import { jwtConfig } from './jwt.config';
 import { AppDataSource } from './database';
 import { Logger, LogCategory } from '../utils/logger';
 import { JwtPayload } from '../types';
+import { SUBSCRIPTION_PLANS } from './stripe.config';
 
 export interface SocketUser {
   id: string;
@@ -78,6 +79,76 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
 
       if (!user.activo) {
         return next(new Error('Usuario inactivo'));
+      }
+
+      // Verificar si el restaurante tiene acceso a WebSockets (solo planes PRO y PREMIUM)
+      if (user.restaurante_id) {
+        try {
+          // Consulta simplificada similar a suscripciones.service.ts
+          const suscripcion = await AppDataSource.query(
+            `SELECT tipo_plan, estado FROM suscripciones WHERE restaurante_id = @0`,
+            [user.restaurante_id]
+          );
+
+          if (suscripcion && suscripcion.length > 0) {
+            const suscripcionData = suscripcion[0];
+            const tipoPlan = suscripcionData.tipo_plan;
+            const estadoSuscripcion = suscripcionData.estado;
+
+            // Solo verificar si la suscripción está activa
+            if (estadoSuscripcion === 'active') {
+              const plan = SUBSCRIPTION_PLANS[tipoPlan as keyof typeof SUBSCRIPTION_PLANS];
+              
+              // Verificar si el plan permite websockets
+              if (!plan || !plan.limits.websockets) {
+                Logger.warn('Intento de conexión WebSocket con plan sin acceso', {
+                  categoria: LogCategory.AUTHENTICACION,
+                  usuarioId: user.id,
+                  restauranteId: user.restaurante_id,
+                  tipoPlan,
+                });
+                return next(new Error('WebSockets solo están disponibles para planes PRO y PREMIUM. Actualiza tu plan para acceder a esta funcionalidad.'));
+              }
+            } else {
+              // Suscripción no activa, bloquear websockets
+              Logger.warn('Intento de conexión WebSocket con suscripción inactiva', {
+                categoria: LogCategory.AUTHENTICACION,
+                usuarioId: user.id,
+                restauranteId: user.restaurante_id,
+                estado: estadoSuscripcion,
+              });
+              return next(new Error('WebSockets solo están disponibles para planes PRO y PREMIUM activos. Actualiza tu plan para acceder a esta funcionalidad.'));
+            }
+          } else {
+            // Si no hay suscripción, asumir plan FREE (no websockets)
+            Logger.warn('Intento de conexión WebSocket sin suscripción', {
+              categoria: LogCategory.AUTHENTICACION,
+              usuarioId: user.id,
+              restauranteId: user.restaurante_id,
+            });
+            return next(new Error('WebSockets solo están disponibles para planes PRO y PREMIUM. Actualiza tu plan para acceder a esta funcionalidad.'));
+          }
+        } catch (subscriptionError: any) {
+          Logger.error('Error al verificar suscripción para WebSocket', subscriptionError instanceof Error ? subscriptionError : new Error(String(subscriptionError)), {
+            categoria: LogCategory.AUTHENTICACION,
+            usuarioId: user.id,
+            restauranteId: user.restaurante_id,
+            detalle: { 
+              error: subscriptionError.message || String(subscriptionError),
+              stack: subscriptionError.stack,
+            },
+          });
+          // En caso de error en la consulta, permitir conexión (el frontend ya valida el plan)
+          // Esto evita bloquear completamente si hay un error temporal en la BD
+          Logger.warn('Permitiendo conexión WebSocket debido a error en verificación (fallback)', {
+            categoria: LogCategory.AUTHENTICACION,
+            usuarioId: user.id,
+            restauranteId: user.restaurante_id,
+          });
+        }
+      } else {
+        // Si no tiene restaurante, no puede usar websockets
+        return next(new Error('Usuario sin restaurante asociado'));
       }
 
       // Agregar información del usuario al socket
