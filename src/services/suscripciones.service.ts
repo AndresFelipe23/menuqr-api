@@ -76,17 +76,22 @@ export class SuscripcionesService extends BaseService {
 
     // Verificar que el restaurante existe
     const restaurante = await AppDataSource.query(
-      `SELECT id, nombre, correo FROM restaurantes WHERE id = @0 AND fecha_eliminacion IS NULL`,
+      `SELECT id, nombre, correo, telefono FROM restaurantes WHERE id = @0 AND fecha_eliminacion IS NULL`,
       [crearSuscripcionDto.restauranteId]
     );
 
     if (!restaurante || restaurante.length === 0) {
       this.handleError('Restaurante no encontrado', null, 404);
     }
-    
+
     // Validar que el restaurante tiene email (requerido para Wompi)
     if (!restaurante[0].correo || !restaurante[0].correo.includes('@')) {
       this.handleError('El restaurante debe tener un email válido para procesar pagos', null, 400);
+    }
+
+    // Validar que el restaurante tiene teléfono (requerido por Wompi para transacciones con tarjeta)
+    if (crearSuscripcionDto.tipoPlan !== 'free' && (!restaurante[0].telefono || restaurante[0].telefono.length < 10)) {
+      this.handleError('El restaurante debe tener un teléfono válido (mínimo 10 dígitos) para procesar pagos con Wompi', null, 400);
     }
 
     // Verificar si ya existe una suscripción activa
@@ -190,7 +195,8 @@ export class SuscripcionesService extends BaseService {
               isAnnual,
               restaurante[0].correo,
               restaurante[0].nombre,
-              crearSuscripcionDto.restauranteId
+              crearSuscripcionDto.restauranteId,
+              restaurante[0].telefono
             );
 
             wompiTransactionId = subscriptionResult.transactionId;
