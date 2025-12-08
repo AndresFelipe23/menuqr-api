@@ -349,7 +349,23 @@ export class MesasService extends BaseService {
     }
 
     const slugRestaurante = restauranteInfo[0].slug;
-    const frontendClienteUrl = process.env.FRONTEND_CLIENTE_URL || 'http://localhost:4321';
+    // Obtener la URL del frontend cliente, priorizando la variable de entorno
+    // Si no está configurada, usar el dominio de producción solo en producción
+    const frontendClienteUrl = process.env.FRONTEND_CLIENTE_URL || 
+      (process.env.NODE_ENV === 'production' 
+        ? 'https://menusqr.site' 
+        : 'http://localhost:4321');
+    
+    Logger.debug('Generando código QR para nueva mesa', {
+      categoria: this.logCategory,
+      detalle: { 
+        frontendClienteUrl, 
+        slugRestaurante, 
+        restauranteId: crearMesaDto.restauranteId,
+        tieneVariableEntorno: !!process.env.FRONTEND_CLIENTE_URL,
+        nodeEnv: process.env.NODE_ENV 
+      },
+    });
 
     // Crear la mesa primero (necesitamos el ID para generar el QR)
     const resultado = await AppDataSource.query(`
@@ -650,7 +666,23 @@ export class MesasService extends BaseService {
     }
 
     const slugRestaurante = restauranteInfo[0].slug;
-    const frontendClienteUrl = process.env.FRONTEND_CLIENTE_URL || 'http://localhost:4321';
+    // Obtener la URL del frontend cliente, priorizando la variable de entorno
+    // Si no está configurada, usar el dominio de producción solo en producción
+    const frontendClienteUrl = process.env.FRONTEND_CLIENTE_URL || 
+      (process.env.NODE_ENV === 'production' 
+        ? 'https://menusqr.site' 
+        : 'http://localhost:4321');
+    
+    Logger.debug('Regenerando código QR para mesa existente', {
+      categoria: this.logCategory,
+      detalle: { 
+        frontendClienteUrl, 
+        slugRestaurante, 
+        mesaId,
+        tieneVariableEntorno: !!process.env.FRONTEND_CLIENTE_URL,
+        nodeEnv: process.env.NODE_ENV 
+      },
+    });
 
     // Generar el código QR
     const codigoQrGenerado = `${frontendClienteUrl}/${slugRestaurante}/m/${mesaId}`;
