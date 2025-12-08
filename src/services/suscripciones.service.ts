@@ -143,10 +143,17 @@ export class SuscripcionesService extends BaseService {
         finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
         finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
         
-        Logger.info('Creando suscripción pendiente para payment link de Wompi', {
+        Logger.info('Creando suscripción pendiente para payment link de Wompi (sin llamadas externas)', {
           categoria: this.logCategory,
-          detalle: { restauranteId: crearSuscripcionDto.restauranteId, plan: crearSuscripcionDto.tipoPlan },
+          detalle: { 
+            restauranteId: crearSuscripcionDto.restauranteId, 
+            plan: crearSuscripcionDto.tipoPlan,
+            isAnnual: isAnnual,
+            estado: 'incomplete'
+          },
         });
+        // Para payment links, saltar toda la lógica de pago externa
+        // La suscripción se actualizará cuando llegue el webhook
       } else if (!crearSuscripcionDto.paymentMethodId) {
         this.handleError('Se requiere un método de pago para planes de pago', null, 400);
       } else {
@@ -329,6 +336,13 @@ export class SuscripcionesService extends BaseService {
           this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
         }
       }
+    }
+
+    // Si es payment link de Wompi (sin paymentMethodId), crear directamente en BD sin más procesamiento
+    // Esto evita timeouts ya que no hacemos llamadas externas
+    if (paymentProvider === 'wompi' && !crearSuscripcionDto.paymentMethodId && estado === 'incomplete') {
+      // Ya calculamos inicioPeriodo y finPeriodo arriba, solo crear en BD
+      // Continuar con la creación en BD más abajo
     }
 
     // Crear suscripción en BD

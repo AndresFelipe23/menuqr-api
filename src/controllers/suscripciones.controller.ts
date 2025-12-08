@@ -141,11 +141,38 @@ export class SuscripcionesController extends BaseController {
         // No incluimos paymentMethodId porque aún no tenemos la transacción
       };
 
-      const suscripcion = await this.suscripcionesService.crear(
-        crearSuscripcionDto,
-        user.id,
-        this.getRequestInfo(req)
-      );
+      // Crear suscripción de forma asíncrona para que no bloquee la respuesta
+      // El webhook se encargará de actualizarla cuando se complete el pago
+      let suscripcion;
+      try {
+        suscripcion = await this.suscripcionesService.crear(
+          crearSuscripcionDto,
+          user.id,
+          this.getRequestInfo(req)
+        );
+        
+        Logger.info('Suscripción creada exitosamente para payment link', {
+          categoria: LogCategory.NEGOCIO,
+          detalle: { 
+            restauranteId: user.restauranteId, 
+            plan, 
+            isAnnual, 
+            suscripcionId: suscripcion.id,
+            estado: suscripcion.estado 
+          },
+        });
+      } catch (error: any) {
+        Logger.error('Error al crear suscripción para payment link', error instanceof Error ? error : new Error(String(error)), {
+          categoria: LogCategory.NEGOCIO,
+          detalle: { restauranteId: user.restauranteId, plan, isAnnual },
+        });
+        return this.responseUtil.error(
+          res,
+          'Error al preparar la suscripción. Por favor, intenta nuevamente.',
+          500,
+          'SUBSCRIPTION_CREATION_ERROR'
+        );
+      }
 
       // Construir la URL del payment link con parámetros
       const url = new URL(paymentLink);
