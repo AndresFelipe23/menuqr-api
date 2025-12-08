@@ -394,7 +394,7 @@ export class RestaurantsService extends BaseService {
               categoria: this.logCategory,
               usuarioId,
               restauranteId: restauranteMapeado.id,
-              rolId: adminRole[0].id,
+              detalle: { rolId: adminRole[0].id },
             });
           }
         }

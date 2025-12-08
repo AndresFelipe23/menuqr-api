@@ -105,7 +105,7 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
                   categoria: LogCategory.AUTHENTICACION,
                   usuarioId: user.id,
                   restauranteId: user.restaurante_id,
-                  tipoPlan,
+                  detalle: { tipoPlan },
                 });
                 return next(new Error('WebSockets solo están disponibles para planes PRO y PREMIUM. Actualiza tu plan para acceder a esta funcionalidad.'));
               }
@@ -115,7 +115,7 @@ export function initializeSocketIO(httpServer: HttpServer): SocketIOServer {
                 categoria: LogCategory.AUTHENTICACION,
                 usuarioId: user.id,
                 restauranteId: user.restaurante_id,
-                estado: estadoSuscripcion,
+                detalle: { estado: estadoSuscripcion },
               });
               return next(new Error('WebSockets solo están disponibles para planes PRO y PREMIUM activos. Actualiza tu plan para acceder a esta funcionalidad.'));
             }
