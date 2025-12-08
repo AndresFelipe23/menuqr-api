@@ -248,59 +248,89 @@ async function handlePaymentFailed(invoice: any) {
 /**
  * Webhook de Wompi para eventos de transacciones
  * IMPORTANTE: Esta ruta NO debe usar el middleware de autenticación
- * Wompi verifica la firma del webhook usando un evento.secret
+ * Wompi verifica la firma del webhook usando WOMPI_EVENTS_SECRET
+ * 
+ * La URL de este webhook debe configurarse en Wompi en:
+ * Desarrolladores > Seguimiento de Transacciones > URL de Eventos
+ * Ejemplo: https://tudominio.com/api/webhooks/wompi
  */
 router.post('/wompi', express.json(), async (req: Request, res: Response) => {
   try {
     const event = req.body;
-    const signature = req.headers['signature'] as string;
+    
+    // Wompi puede enviar la firma en diferentes headers según la versión
+    // Verificar en 'signature' o 'x-signature'
+    const signature = (req.headers['signature'] || req.headers['x-signature']) as string;
     const { eventsSecret } = getWompiConfig();
+
+    Logger.info('Webhook de Wompi recibido', {
+      categoria: LogCategory.SISTEMA,
+      detalle: { 
+        event: event.event || event.data?.status, 
+        hasSignature: !!signature,
+        hasEventsSecret: !!eventsSecret 
+      },
+    });
 
     // Verificar firma del webhook usando el secreto de eventos
     // Wompi usa HMAC SHA256 para firmar los webhooks
+    // La firma se calcula sobre el cuerpo completo del request
     if (eventsSecret && signature) {
+      // Crear el payload como string para calcular la firma
+      const payload = JSON.stringify(event);
       const expectedSignature = crypto
         .createHmac('sha256', eventsSecret)
-        .update(JSON.stringify(event))
+        .update(payload)
         .digest('hex');
       
-      // Comparar firmas de forma segura
-      if (signature !== expectedSignature) {
+      // Comparar firmas de forma segura (timing-safe comparison)
+      const isValid = crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature)
+      );
+      
+      if (!isValid) {
         Logger.error('Webhook de Wompi: Firma inválida', new Error('Invalid signature'), {
           categoria: LogCategory.SISTEMA,
+          detalle: { 
+            received: signature.substring(0, 20) + '...',
+            expected: expectedSignature.substring(0, 20) + '...'
+          },
         });
-        return res.status(401).send('Unauthorized - Invalid signature');
+        return res.status(401).json({ error: 'Unauthorized - Invalid signature' });
       }
     } else if (eventsSecret && !signature) {
       Logger.warn('Webhook de Wompi: Firma faltante pero secreto configurado', {
         categoria: LogCategory.SISTEMA,
       });
-      // En desarrollo puedes permitir continuar, en producción deberías rechazar
+      // En producción rechazar si no hay firma
       if (process.env.NODE_ENV === 'production') {
-        return res.status(401).send('Unauthorized - Missing signature');
+        return res.status(401).json({ error: 'Unauthorized - Missing signature' });
       }
     }
 
     // Procesar evento según tipo
-    switch (event.event) {
-      case 'transaction.updated':
-        await handleWompiTransactionUpdate(event.data);
-        break;
-
-      case 'transaction.status_changed':
-        await handleWompiTransactionStatusChanged(event.data);
-        break;
-
-      default:
-        Logger.info(`Webhook de Wompi: Evento no manejado: ${event.event}`, {
-          categoria: LogCategory.SISTEMA,
-        });
+    // Wompi puede enviar eventos como 'transaction.created', 'transaction.updated', etc.
+    const eventType = event.event || event.data?.status;
+    
+    if (event.data && eventType) {
+      // Si viene como objeto con 'data', procesar la transacción
+      await handleWompiTransactionUpdate(event.data);
+    } else if (event.id && event.status) {
+      // Si viene directamente como transacción
+      await handleWompiTransactionUpdate(event);
+    } else {
+      Logger.info(`Webhook de Wompi: Evento no manejado`, {
+        categoria: LogCategory.SISTEMA,
+        detalle: { eventBody: event },
+      });
     }
 
-    res.json({ received: true });
+    res.json({ received: true, status: 'ok' });
   } catch (error: any) {
     Logger.error('Error al procesar webhook de Wompi', error instanceof Error ? error : new Error(String(error)), {
       categoria: LogCategory.SISTEMA,
+      detalle: { body: req.body },
     });
     res.status(500).json({ error: 'Error al procesar webhook' });
   }
@@ -310,21 +340,44 @@ router.post('/wompi', express.json(), async (req: Request, res: Response) => {
  * Maneja actualizaciones de transacción de Wompi
  */
 async function handleWompiTransactionUpdate(transaction: any) {
-  const transactionId = transaction.id;
-  const status = transaction.status;
-  const amountInCents = transaction.amount_in_cents;
-  const currency = transaction.currency;
+  const transactionId = transaction.id || transaction.data?.id;
+  const status = transaction.status || transaction.data?.status;
+  const amountInCents = transaction.amount_in_cents || transaction.data?.amount_in_cents;
+  const currency = transaction.currency || transaction.data?.currency || 'COP';
+  const reference = transaction.reference || transaction.data?.reference || transaction.reference_id || transaction.data?.reference_id;
 
-  // Buscar suscripción por transaction ID (almacenado en stripe_subscription_id)
-  const suscripcion = await AppDataSource.query(
-    `SELECT * FROM suscripciones WHERE stripe_subscription_id = @0`,
-    [transactionId]
-  );
+  Logger.info('Procesando transacción de Wompi', {
+    categoria: LogCategory.SISTEMA,
+    detalle: { transactionId, status, reference },
+  });
+
+  // Buscar suscripción por transaction ID o por referencia
+  // El transactionId se almacena en stripe_subscription_id para Wompi también
+  let suscripcion: any[] = [];
+  
+  if (transactionId) {
+    suscripcion = await AppDataSource.query(
+      `SELECT * FROM suscripciones WHERE stripe_subscription_id = @0`,
+      [transactionId]
+    );
+  }
+  
+  // Si no se encuentra por transactionId, intentar buscar por referencia
+  if ((!suscripcion || suscripcion.length === 0) && reference) {
+    // La referencia puede tener formato: SUB_restauranteId_timestamp
+    const restauranteIdMatch = reference.match(/SUB_([^_]+)/);
+    if (restauranteIdMatch && restauranteIdMatch[1]) {
+      suscripcion = await AppDataSource.query(
+        `SELECT * FROM suscripciones WHERE restaurante_id = @0 ORDER BY fecha_creacion DESC`,
+        [restauranteIdMatch[1]]
+      );
+    }
+  }
 
   if (!suscripcion || suscripcion.length === 0) {
     Logger.warn('Webhook de Wompi: Suscripción no encontrada para transacción', {
       categoria: LogCategory.SISTEMA,
-      detalle: { transactionId },
+      detalle: { transactionId, reference },
     });
     return;
   }
@@ -357,19 +410,46 @@ async function handleWompiTransactionUpdate(transaction: any) {
     [estadoSuscripcion, fechaActual, suscripcion[0].restaurante_id]
   );
 
-  // Si el pago fue aprobado, registrar el pago
-  if (status === 'APPROVED') {
-    const amount = amountInCents / 100; // Convertir de centavos a pesos
+  // Si el pago fue aprobado, crear o actualizar la suscripción si no existe
+  if (status === 'APPROVED' || status === 'APPROVED_PARTIAL') {
+    const amount = amountInCents ? amountInCents / 100 : 0; // Convertir de centavos a pesos
 
-    // Verificar si el pago ya existe
+    // Si la suscripción está en estado incomplete, activarla
+    if (suscripcion[0].estado === 'incomplete' || suscripcion[0].estado === 'pending') {
+      // Calcular fechas de período (mensual o anual según el monto)
+      const isAnnual = amount >= 300000; // Si es >= 300k COP es probablemente anual
+      const fechaActualDate = new Date(fechaActual);
+      const finPeriodoDate = new Date(fechaActualDate);
+      finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
+      const finPeriodoStr = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+
+      await AppDataSource.query(
+        `UPDATE suscripciones 
+         SET estado = 'active',
+             inicio_periodo_actual = @0,
+             fin_periodo_actual = @1,
+             fecha_actualizacion = @2
+         WHERE id = @3`,
+        [fechaActualDate.toISOString().replace('T', ' ').slice(0, 23), finPeriodoStr, fechaActual, suscripcion[0].id]
+      );
+
+      // Actualizar estado del restaurante
+      await AppDataSource.query(
+        `UPDATE restaurantes SET estado_suscripcion = 'active', fecha_actualizacion = @0 
+         WHERE id = @1`,
+        [fechaActual, suscripcion[0].restaurante_id]
+      );
+    }
+
+    // Verificar si el pago ya existe antes de crear uno nuevo
     const pagoExistente = await AppDataSource.query(
       `SELECT id FROM pagos WHERE stripe_payment_intent_id = @0`,
       [transactionId]
     );
 
     if (!pagoExistente || pagoExistente.length === 0) {
-      const fechaPago = transaction.finalized_at
-        ? new Date(transaction.finalized_at).toISOString().replace('T', ' ').slice(0, 23)
+      const fechaPago = (transaction.finalized_at || transaction.data?.finalized_at)
+        ? new Date(transaction.finalized_at || transaction.data?.finalized_at).toISOString().replace('T', ' ').slice(0, 23)
         : fechaActual;
 
       await AppDataSource.query(
@@ -391,7 +471,7 @@ async function handleWompiTransactionUpdate(transaction: any) {
 
       Logger.info('Webhook de Wompi: Pago registrado exitosamente', {
         categoria: LogCategory.SISTEMA,
-        detalle: { suscripcionId: suscripcion[0].id, monto: amount },
+        detalle: { suscripcionId: suscripcion[0].id, monto: amount, transactionId },
       });
     }
   }

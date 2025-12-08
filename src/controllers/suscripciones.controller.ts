@@ -3,6 +3,7 @@ import { SuscripcionesService } from '../services/suscripciones.service';
 import { CrearSuscripcionDto, ActualizarSuscripcionDto } from '../dto';
 import { AuthenticatedRequest } from '../types/express.types';
 import { getWompiPaymentLink } from '../config/wompi.config';
+import { Logger, LogCategory } from '../utils/logger';
 
 export class SuscripcionesController extends BaseController {
   private suscripcionesService = new SuscripcionesService();
@@ -69,13 +70,19 @@ export class SuscripcionesController extends BaseController {
 
   /**
    * Obtiene el link de pago de Wompi para un plan
+   * Crea una suscripción pendiente antes de redirigir al payment link
    */
   public obtenerWompiPaymentLink = this.asyncHandler(async (req: AuthenticatedRequest, res) => {
     const { plan } = req.query;
     const isAnnual = req.query.annual === 'true';
+    const user = req.user;
 
     if (!plan || !['pro', 'premium'].includes(plan as string)) {
       return this.responseUtil.error(res, 'Plan inválido. Debe ser: pro o premium', 400, 'INVALID_PLAN');
+    }
+
+    if (!user?.restauranteId) {
+      return this.responseUtil.error(res, 'No se encontró el restaurante del usuario', 400, 'RESTAURANT_NOT_FOUND');
     }
 
     const paymentLink = getWompiPaymentLink(plan as 'pro' | 'premium', isAnnual);
@@ -89,23 +96,87 @@ export class SuscripcionesController extends BaseController {
       );
     }
 
-    // Agregar parámetros a la URL para identificar la transacción
-    const user = req.user;
-    const url = new URL(paymentLink);
+    // Crear una suscripción pendiente para que el webhook pueda encontrarla después
+    // Generar una referencia única para esta transacción
+    const reference = `SUB_${user.restauranteId}_${Date.now()}`;
     
-    // Agregar parámetros de referencia (si Wompi los soporta)
-    // Estos parámetros se pueden usar para identificar la transacción en el webhook
-    if (user?.restauranteId) {
-      url.searchParams.append('reference', `SUB_${user.restauranteId}_${Date.now()}`);
-      url.searchParams.append('restauranteId', user.restauranteId);
-    }
+    try {
+      // Verificar si ya existe una suscripción activa
+      const suscripcionExistente = await this.suscripcionesService.obtenerPorRestauranteId(user.restauranteId);
+      
+      if (suscripcionExistente && suscripcionExistente.estado === 'active') {
+        return this.responseUtil.error(
+          res,
+          'Ya tienes una suscripción activa. Actualiza tu plan desde la página de planes.',
+          409,
+          'SUBSCRIPTION_ALREADY_ACTIVE'
+        );
+      }
 
-    return this.responseUtil.success(
-      res,
-      { paymentLink: url.toString() },
-      'Link de pago obtenido exitosamente',
-      200
-    );
+      // Crear suscripción pendiente/incomplete que se actualizará cuando llegue el webhook
+      const crearSuscripcionDto: any = {
+        restauranteId: user.restauranteId,
+        tipoPlan: plan,
+        isAnnual,
+        paymentProvider: 'wompi',
+        // No incluimos paymentMethodId porque aún no tenemos la transacción
+      };
+
+      const suscripcion = await this.suscripcionesService.crear(
+        crearSuscripcionDto,
+        user.id,
+        this.getRequestInfo(req)
+      );
+
+      // Construir la URL del payment link con parámetros
+      const url = new URL(paymentLink);
+      
+      // Agregar referencia única para identificar la transacción en el webhook
+      // Wompi puede incluir esta referencia en el webhook
+      url.searchParams.append('reference', reference);
+      
+      // URL de callback después del pago (redirección después de completar el pago)
+      // Wompi permite configurar redirect_url en los payment links
+      const frontendAdminUrl = process.env.FRONTEND_ADMIN_URL || 
+        (process.env.NODE_ENV === 'production' 
+          ? 'https://admin.menusqr.site' 
+          : 'http://localhost:3000');
+      
+      // URL de callback después del pago exitoso
+      const callbackUrl = `${frontendAdminUrl}/dashboard/planes?wompi_callback=true&reference=${encodeURIComponent(reference)}&plan=${plan}&annual=${isAnnual}`;
+      
+      // Agregar redirectUrl como parámetro (Wompi puede soportar esto según configuración)
+      // Nota: Algunos payment links de Wompi tienen el redirectUrl pre-configurado
+      // Si el link ya tiene redirectUrl, estos parámetros lo sobrescribirán o se agregarán
+      url.searchParams.append('redirect_url', callbackUrl);
+
+      Logger.info('Link de pago Wompi generado', {
+        categoria: LogCategory.NEGOCIO,
+        detalle: { 
+          restauranteId: user.restauranteId, 
+          plan, 
+          isAnnual, 
+          reference,
+          suscripcionId: suscripcion.id 
+        },
+      });
+
+      return this.responseUtil.success(
+        res,
+        { 
+          paymentLink: url.toString(),
+          reference,
+          suscripcionId: suscripcion.id 
+        },
+        'Link de pago obtenido exitosamente',
+        200
+      );
+    } catch (error: any) {
+      Logger.error('Error al crear suscripción para payment link de Wompi', error, {
+        categoria: LogCategory.NEGOCIO,
+      });
+      throw error;
+    }
   });
 }
 

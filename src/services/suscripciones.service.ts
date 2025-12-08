@@ -110,188 +110,205 @@ export class SuscripcionesService extends BaseService {
       estado = 'active';
     } else {
       // Para planes de pago, crear según el proveedor elegido
-      if (!crearSuscripcionDto.paymentMethodId) {
+      const isAnnual = crearSuscripcionDto.isAnnual || false;
+
+      // Si no hay paymentMethodId y es Wompi, puede ser que se esté usando payment link
+      // En ese caso, crear suscripción pendiente que se actualizará cuando llegue el webhook
+      if (!crearSuscripcionDto.paymentMethodId && paymentProvider === 'wompi') {
+        // Crear suscripción pendiente para payment link
+        estado = 'incomplete';
+        const fechaActualDate = new Date(fechaActual);
+        inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
+        // Establecer fin de período temporal (se actualizará cuando se apruebe el pago)
+        const finPeriodoDate = new Date(fechaActualDate);
+        finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
+        finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+        
+        Logger.info('Creando suscripción pendiente para payment link de Wompi', {
+          categoria: this.logCategory,
+          detalle: { restauranteId: crearSuscripcionDto.restauranteId, plan: crearSuscripcionDto.tipoPlan },
+        });
+      } else if (!crearSuscripcionDto.paymentMethodId) {
         this.handleError('Se requiere un método de pago para planes de pago', null, 400);
-      }
-
-      try {
-        const isAnnual = crearSuscripcionDto.isAnnual || false;
-
-        if (paymentProvider === 'wompi') {
-          // Procesar pago con Wompi
-          const wompiService = new WompiService();
-          
-          // El paymentMethodId puede venir como JSON stringificado con los datos de la tarjeta
-          // o como un token ya creado
-          let tokenId = crearSuscripcionDto.paymentMethodId;
-          
-          try {
-            // Intentar parsear como JSON (si viene del frontend con datos de tarjeta)
-            const parsedData = JSON.parse(crearSuscripcionDto.paymentMethodId || '');
-            if (parsedData && parsedData.type === 'wompi' && parsedData.cardData) {
-              // Crear token en Wompi con los datos de la tarjeta
-              tokenId = await wompiService.createToken(JSON.stringify(parsedData.cardData));
+      } else {
+        // Procesar pago con método de pago proporcionado
+        try {
+          if (paymentProvider === 'wompi') {
+            // Procesar pago con Wompi
+            const wompiService = new WompiService();
+            
+            // El paymentMethodId puede venir como JSON stringificado con los datos de la tarjeta
+            // o como un token ya creado
+            let tokenId = crearSuscripcionDto.paymentMethodId;
+            
+            try {
+              // Intentar parsear como JSON (si viene del frontend con datos de tarjeta)
+              const parsedData = JSON.parse(crearSuscripcionDto.paymentMethodId || '');
+              if (parsedData && parsedData.type === 'wompi' && parsedData.cardData) {
+                // Crear token en Wompi con los datos de la tarjeta
+                tokenId = await wompiService.createToken(JSON.stringify(parsedData.cardData));
+              }
+            } catch (e) {
+              // Si no es JSON, asumir que ya es un token
+              // tokenId ya está configurado
             }
-          } catch (e) {
-            // Si no es JSON, asumir que ya es un token
-            // tokenId ya está configurado
-          }
-          
-          const subscriptionResult = await wompiService.createSubscription(
-            tokenId,
-            crearSuscripcionDto.tipoPlan,
-            isAnnual,
-            restaurante[0].correo,
-            restaurante[0].nombre,
-            crearSuscripcionDto.restauranteId
-          );
-
-          wompiTransactionId = subscriptionResult.transactionId;
-          
-          // Mapear estado de Wompi a nuestro estado
-          // APPROVED, DECLINED, VOIDED, ERROR, PENDING
-          if (subscriptionResult.status === 'APPROVED') {
-            estado = 'active';
-          } else if (subscriptionResult.status === 'PENDING') {
-            estado = 'incomplete';
-          } else {
-            this.handleError(`Pago rechazado en Wompi: ${subscriptionResult.status}`, null, 400);
-          }
-
-          // Calcular fechas de período
-          const fechaActualDate = new Date(fechaActual);
-          inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
-          const finPeriodoDate = new Date(fechaActualDate);
-          finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
-          finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
-
-          // Registrar pago en BD
-          if (subscriptionResult.status === 'APPROVED') {
-            const planPrice = getWompiPlanPrice(crearSuscripcionDto.tipoPlan, isAnnual);
-            await AppDataSource.query(
-              `INSERT INTO pagos (
-                suscripcion_id, restaurante_id, monto, moneda,
-                stripe_payment_intent_id, estado, fecha_pago, fecha_creacion
-              )
-              VALUES (@0, @1, @2, @3, @4, 'exitoso', @5, @6)`,
-              [
-                null, // Se actualizará después de crear la suscripción
-                crearSuscripcionDto.restauranteId,
-                planPrice / 100, // Convertir de centavos a pesos
-                'COP',
-                wompiTransactionId, // Usamos stripe_payment_intent_id para almacenar el ID de Wompi
-                fechaActual,
-                fechaActual,
-              ]
+            
+            const subscriptionResult = await wompiService.createSubscription(
+              tokenId,
+              crearSuscripcionDto.tipoPlan,
+              isAnnual,
+              restaurante[0].correo,
+              restaurante[0].nombre,
+              crearSuscripcionDto.restauranteId
             );
-          }
-        } else {
-          // Procesar pago con Stripe (código original)
-          try {
-            // Obtener precio según período (mensual o anual)
-            const planPrice = getPlanPrice(crearSuscripcionDto.tipoPlan, 'USD', isAnnual);
-          
-            if (!planPrice.priceId) {
-              const priceIdVar = isAnnual 
-                ? `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}_ANNUAL`
-                : `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}`;
-              
-              this.handleError(
-                `El plan ${crearSuscripcionDto.tipoPlan} (${isAnnual ? 'anual' : 'mensual'}) no tiene un precio configurado en Stripe. ` +
-                `Por favor, configura ${priceIdVar} en las variables de entorno.`,
-                null,
-                500
+
+            wompiTransactionId = subscriptionResult.transactionId;
+            
+            // Mapear estado de Wompi a nuestro estado
+            // APPROVED, DECLINED, VOIDED, ERROR, PENDING
+            if (subscriptionResult.status === 'APPROVED') {
+              estado = 'active';
+            } else if (subscriptionResult.status === 'PENDING') {
+              estado = 'incomplete';
+            } else {
+              this.handleError(`Pago rechazado en Wompi: ${subscriptionResult.status}`, null, 400);
+            }
+
+            // Calcular fechas de período
+            const fechaActualDate = new Date(fechaActual);
+            inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
+            const finPeriodoDate = new Date(fechaActualDate);
+            finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
+            finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+
+            // Registrar pago en BD
+            if (subscriptionResult.status === 'APPROVED') {
+              const planPrice = getWompiPlanPrice(crearSuscripcionDto.tipoPlan, isAnnual);
+              await AppDataSource.query(
+                `INSERT INTO pagos (
+                  suscripcion_id, restaurante_id, monto, moneda,
+                  stripe_payment_intent_id, estado, fecha_pago, fecha_creacion
+                )
+                VALUES (@0, @1, @2, @3, @4, 'exitoso', @5, @6)`,
+                [
+                  null, // Se actualizará después de crear la suscripción
+                  crearSuscripcionDto.restauranteId,
+                  planPrice / 100, // Convertir de centavos a pesos
+                  'COP',
+                  wompiTransactionId, // Usamos stripe_payment_intent_id para almacenar el ID de Wompi
+                  fechaActual,
+                  fechaActual,
+                ]
               );
             }
+          } else {
+            // Procesar pago con Stripe (código original)
+            try {
+              // Obtener precio según período (mensual o anual)
+              const planPrice = getPlanPrice(crearSuscripcionDto.tipoPlan, 'USD', isAnnual);
+              
+              if (!planPrice.priceId) {
+                const priceIdVar = isAnnual 
+                  ? `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}_ANNUAL`
+                  : `STRIPE_PRICE_ID_${crearSuscripcionDto.tipoPlan.toUpperCase()}`;
+                
+                this.handleError(
+                  `El plan ${crearSuscripcionDto.tipoPlan} (${isAnnual ? 'anual' : 'mensual'}) no tiene un precio configurado en Stripe. ` +
+                  `Por favor, configura ${priceIdVar} en las variables de entorno.`,
+                  null,
+                  500
+                );
+              }
 
-            // Crear o obtener cliente en Stripe
-            let customer: Stripe.Customer;
-            const customerExistente = await stripe.customers.list({
-              email: restaurante[0].correo,
-              limit: 1,
-            });
-
-            if (customerExistente.data.length > 0) {
-              customer = customerExistente.data[0];
-            } else {
-              customer = await stripe.customers.create({
+              // Crear o obtener cliente en Stripe
+              let customer: Stripe.Customer;
+              const customerExistente = await stripe.customers.list({
                 email: restaurante[0].correo,
-                name: restaurante[0].nombre,
-                metadata: {
-                  restauranteId: crearSuscripcionDto.restauranteId,
+                limit: 1,
+              });
+
+              if (customerExistente.data.length > 0) {
+                customer = customerExistente.data[0];
+              } else {
+                customer = await stripe.customers.create({
+                  email: restaurante[0].correo,
+                  name: restaurante[0].nombre,
+                  metadata: {
+                    restauranteId: crearSuscripcionDto.restauranteId,
+                  },
+                });
+              }
+
+              stripeCustomerId = customer.id;
+
+              // Adjuntar método de pago al cliente
+              await stripe.paymentMethods.attach(crearSuscripcionDto.paymentMethodId, {
+                customer: customer.id,
+              });
+
+              // Establecer como método de pago por defecto
+              await stripe.customers.update(customer.id, {
+                invoice_settings: {
+                  default_payment_method: crearSuscripcionDto.paymentMethodId,
                 },
               });
-            }
 
-            stripeCustomerId = customer.id;
+              // Crear suscripción en Stripe con el price_id (mensual o anual)
+              // Stripe intentará cobrar automáticamente con el método de pago por defecto
+              const subscription = await stripe.subscriptions.create({
+                customer: customer.id,
+                items: [{ price: planPrice.priceId }],
+                payment_settings: { save_default_payment_method: 'on_subscription' },
+                expand: ['latest_invoice', 'latest_invoice.payment_intent'],
+              });
 
-            // Adjuntar método de pago al cliente
-            await stripe.paymentMethods.attach(crearSuscripcionDto.paymentMethodId, {
-              customer: customer.id,
-            });
-
-            // Establecer como método de pago por defecto
-            await stripe.customers.update(customer.id, {
-              invoice_settings: {
-                default_payment_method: crearSuscripcionDto.paymentMethodId,
-              },
-            });
-
-            // Crear suscripción en Stripe con el price_id (mensual o anual)
-            // Stripe intentará cobrar automáticamente con el método de pago por defecto
-            const subscription = await stripe.subscriptions.create({
-              customer: customer.id,
-              items: [{ price: planPrice.priceId }],
-              payment_settings: { save_default_payment_method: 'on_subscription' },
-              expand: ['latest_invoice', 'latest_invoice.payment_intent'],
-            });
-
-            stripeSubscriptionId = subscription.id;
-            estado = subscription.status === 'trialing' ? 'trialing' : 'active';
-            
-            // Verificar que current_period_start y current_period_end existan
-            // Si la suscripción está incomplete, estos valores pueden no estar disponibles
-            const sub = subscription as any;
-            if (sub.current_period_start && sub.current_period_end) {
-              const inicioPeriodoDate = new Date(sub.current_period_start * 1000);
-              const finPeriodoDate = new Date(sub.current_period_end * 1000);
+              stripeSubscriptionId = subscription.id;
+              estado = subscription.status === 'trialing' ? 'trialing' : 'active';
               
-              // Validar que las fechas sean válidas
-              if (!isNaN(inicioPeriodoDate.getTime()) && !isNaN(finPeriodoDate.getTime())) {
-                // Convertir a formato SQL Server (YYYY-MM-DD HH:mm:ss.sss)
-                inicioPeriodo = inicioPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
-                finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+              // Verificar que current_period_start y current_period_end existan
+              // Si la suscripción está incomplete, estos valores pueden no estar disponibles
+              const sub = subscription as any;
+              if (sub.current_period_start && sub.current_period_end) {
+                const inicioPeriodoDate = new Date(sub.current_period_start * 1000);
+                const finPeriodoDate = new Date(sub.current_period_end * 1000);
+                
+                // Validar que las fechas sean válidas
+                if (!isNaN(inicioPeriodoDate.getTime()) && !isNaN(finPeriodoDate.getTime())) {
+                  // Convertir a formato SQL Server (YYYY-MM-DD HH:mm:ss.sss)
+                  inicioPeriodo = inicioPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+                  finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+                } else {
+                  // Si las fechas son inválidas, usar fecha actual y calcular fin de período
+                  const fechaActualDate = new Date();
+                  inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
+                  const finPeriodoDate2 = new Date(fechaActualDate);
+                  finPeriodoDate2.setMonth(finPeriodoDate2.getMonth() + (isAnnual ? 12 : 1));
+                  finPeriodo = finPeriodoDate2.toISOString().replace('T', ' ').slice(0, 23);
+                }
               } else {
-                // Si las fechas son inválidas, usar fecha actual y calcular fin de período
+                // Si no hay períodos definidos (suscripción incomplete), usar fecha actual
                 const fechaActualDate = new Date();
                 inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
-                const finPeriodoDate = new Date(fechaActualDate);
-                finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
-                finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+                const finPeriodoDate2 = new Date(fechaActualDate);
+                finPeriodoDate2.setMonth(finPeriodoDate2.getMonth() + (isAnnual ? 12 : 1));
+                finPeriodo = finPeriodoDate2.toISOString().replace('T', ' ').slice(0, 23);
               }
-            } else {
-              // Si no hay períodos definidos (suscripción incomplete), usar fecha actual
-              const fechaActualDate = new Date();
-              inicioPeriodo = fechaActualDate.toISOString().replace('T', ' ').slice(0, 23);
-              const finPeriodoDate = new Date(fechaActualDate);
-              finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
-              finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+            } catch (error: any) {
+              Logger.error('Error al crear suscripción en Stripe', error instanceof Error ? error : new Error(String(error)), {
+                categoria: this.logCategory,
+                restauranteId: crearSuscripcionDto.restauranteId,
+              });
+              this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
             }
-          } catch (error: any) {
-            Logger.error('Error al crear suscripción en Stripe', error instanceof Error ? error : new Error(String(error)), {
-              categoria: this.logCategory,
-              restauranteId: crearSuscripcionDto.restauranteId,
-            });
-            this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
           }
+        } catch (error: any) {
+          // Error general al procesar el pago (ya sea Wompi o Stripe)
+          Logger.error('Error al procesar el pago', error instanceof Error ? error : new Error(String(error)), {
+            categoria: this.logCategory,
+            restauranteId: crearSuscripcionDto.restauranteId,
+          });
+          this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
         }
-      } catch (error: any) {
-        // Error general al procesar el pago (ya sea Wompi o Stripe)
-        Logger.error('Error al procesar el pago', error instanceof Error ? error : new Error(String(error)), {
-          categoria: this.logCategory,
-          restauranteId: crearSuscripcionDto.restauranteId,
-        });
-        this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
       }
     }
 
