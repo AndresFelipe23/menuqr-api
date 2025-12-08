@@ -104,13 +104,32 @@ export class SuscripcionesController extends BaseController {
       // Verificar si ya existe una suscripción activa
       const suscripcionExistente = await this.suscripcionesService.obtenerPorRestauranteId(user.restauranteId);
       
+      // Permitir upgrade si tiene FREE y quiere PRO/PREMIUM, o PRO y quiere PREMIUM
       if (suscripcionExistente && suscripcionExistente.estado === 'active') {
-        return this.responseUtil.error(
-          res,
-          'Ya tienes una suscripción activa. Actualiza tu plan desde la página de planes.',
-          409,
-          'SUBSCRIPTION_ALREADY_ACTIVE'
-        );
+        const esUpgrade = (suscripcionExistente.tipoPlan === 'free' && (plan === 'pro' || plan === 'premium')) ||
+                          (suscripcionExistente.tipoPlan === 'pro' && plan === 'premium');
+        
+        // Si es el mismo plan, rechazar
+        if (suscripcionExistente.tipoPlan === plan) {
+          return this.responseUtil.error(
+            res,
+            'Ya tienes una suscripción activa con este plan.',
+            409,
+            'SUBSCRIPTION_ALREADY_ACTIVE'
+          );
+        }
+        
+        // Si no es un upgrade válido, rechazar
+        if (!esUpgrade) {
+          return this.responseUtil.error(
+            res,
+            'No puedes cambiar a un plan inferior. Cancela tu suscripción actual primero.',
+            409,
+            'INVALID_DOWNGRADE'
+          );
+        }
+        
+        // Si es un upgrade válido, continuar con la creación (se cancelará la anterior después del pago)
       }
 
       // Crear suscripción pendiente/incomplete que se actualizará cuando llegue el webhook

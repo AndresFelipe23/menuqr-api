@@ -84,10 +84,29 @@ export class SuscripcionesService extends BaseService {
       this.handleError('Restaurante no encontrado', null, 404);
     }
 
-    // Verificar que no tenga una suscripción activa
+    // Verificar si ya existe una suscripción activa
     const suscripcionExistente = await this.obtenerPorRestauranteId(crearSuscripcionDto.restauranteId);
+    
+    // Si ya tiene una suscripción activa y es un upgrade (de FREE a PRO/PREMIUM o de PRO a PREMIUM)
+    // Actualizar la suscripción existente en lugar de crear una nueva
     if (suscripcionExistente && suscripcionExistente.estado === 'active') {
-      this.handleError('El restaurante ya tiene una suscripción activa', null, 409);
+      // Si el plan nuevo es igual al actual, rechazar
+      if (suscripcionExistente.tipoPlan === crearSuscripcionDto.tipoPlan) {
+        this.handleError('Ya tienes una suscripción activa con este plan', null, 409);
+      }
+      
+      // Si es un upgrade válido (FREE -> PRO/PREMIUM o PRO -> PREMIUM)
+      const esUpgrade = (suscripcionExistente.tipoPlan === 'free' && (crearSuscripcionDto.tipoPlan === 'pro' || crearSuscripcionDto.tipoPlan === 'premium')) ||
+                        (suscripcionExistente.tipoPlan === 'pro' && crearSuscripcionDto.tipoPlan === 'premium');
+      
+      if (!esUpgrade) {
+        this.handleError('No puedes cambiar a un plan inferior. Cancela tu suscripción actual primero.', null, 409);
+      }
+      
+      // Si es un upgrade válido, usar el método actualizar en lugar de crear
+      // Pero primero necesitamos procesar el pago, así que continuamos con la creación
+      // pero cancelaremos/actualizaremos la anterior después del pago exitoso
+      // Por ahora, permitimos continuar pero cancelaremos la anterior
     }
 
     const fechaActual = getMonteriaLocalDate();
@@ -415,6 +434,29 @@ export class SuscripcionesService extends BaseService {
           detalle: { error: error instanceof Error ? error.message : String(error) },
         });
       }
+    }
+
+    // Si había una suscripción anterior activa y esta es una nueva (upgrade), cancelar la anterior
+    if (suscripcionExistente && suscripcionExistente.estado === 'active' && suscripcionCreada && suscripcionCreada.id !== suscripcionExistente.id) {
+      // Cancelar la suscripción anterior (FREE o inferior)
+      await AppDataSource.query(
+        `UPDATE suscripciones 
+         SET estado = 'cancelled', 
+             fecha_cancelacion = @0,
+             fecha_actualizacion = @0
+         WHERE id = @1 AND restaurante_id = @2 AND estado = 'active'`,
+        [fechaActual, suscripcionExistente.id, crearSuscripcionDto.restauranteId]
+      );
+      
+      Logger.info('Suscripción anterior cancelada debido a upgrade', {
+        categoria: this.logCategory,
+        detalle: { 
+          suscripcionAnteriorId: suscripcionExistente.id,
+          suscripcionNuevaId: suscripcionCreada.id,
+          planAnterior: suscripcionExistente.tipoPlan,
+          planNuevo: crearSuscripcionDto.tipoPlan
+        },
+      });
     }
 
     // Actualizar estado de suscripción en restaurante
