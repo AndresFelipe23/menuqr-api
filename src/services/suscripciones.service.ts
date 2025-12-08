@@ -83,6 +83,11 @@ export class SuscripcionesService extends BaseService {
     if (!restaurante || restaurante.length === 0) {
       this.handleError('Restaurante no encontrado', null, 404);
     }
+    
+    // Validar que el restaurante tiene email (requerido para Wompi)
+    if (!restaurante[0].correo || !restaurante[0].correo.includes('@')) {
+      this.handleError('El restaurante debe tener un email válido para procesar pagos', null, 400);
+    }
 
     // Verificar si ya existe una suscripción activa
     const suscripcionExistente = await this.obtenerPorRestauranteId(crearSuscripcionDto.restauranteId);
