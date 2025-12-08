@@ -214,45 +214,71 @@ export class WompiService extends BaseService {
     amountInCents: number,
     customerEmail: string,
     customerName: string,
-    reference: string
+    reference: string,
+    customerPhone?: string
   ): Promise<WompiTransactionResponse> {
     try {
       // Validar que el token existe
       if (!tokenId) {
         throw new Error('Token de tarjeta requerido para crear transacción');
       }
-      
+
       // Obtener acceptance_token de Wompi dinámicamente (método recomendado)
       // Si falla, usar el token del .env como fallback
       const acceptanceToken = await this.getAcceptanceToken();
-      
+
       // Validar datos requeridos
       if (!customerEmail || !customerEmail.includes('@')) {
         throw new Error('Email de cliente inválido');
       }
-      
+
       if (amountInCents <= 0) {
         throw new Error('El monto debe ser mayor a 0');
       }
-      
+
+      // Construir customer_data según la documentación de Wompi
+      const customerData: any = {
+        email: customerEmail,
+        full_name: customerName || 'Cliente',
+      };
+
+      // Agregar teléfono si está disponible (requerido por Wompi para transacciones con tarjeta)
+      if (customerPhone) {
+        customerData.phone_number = customerPhone;
+      }
+
+      const requestBody = {
+        amount_in_cents: amountInCents,
+        currency: 'COP',
+        customer_email: customerEmail,
+        customer_data: customerData,
+        payment_method: {
+          type: 'CARD',
+          token: tokenId,
+          installments: 1,
+        },
+        reference: reference,
+        acceptance_token: acceptanceToken,
+      };
+
+      Logger.info('Creando transacción en Wompi', {
+        categoria: this.logCategory,
+        detalle: {
+          amount_in_cents: amountInCents,
+          reference: reference,
+          hasToken: !!tokenId,
+          hasAcceptanceToken: !!acceptanceToken,
+          hasPhone: !!customerPhone,
+        },
+      });
+
       const response = await fetch(`${this.apiUrl}/transactions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.config.privateKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          amount_in_cents: amountInCents,
-          currency: 'COP',
-          customer_email: customerEmail,
-          payment_method: {
-            type: 'CARD',
-            token: tokenId,
-            installments: 1,
-          },
-          reference: reference,
-          acceptance_token: acceptanceToken,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -263,7 +289,7 @@ export class WompiService extends BaseService {
         } catch {
           errorObj = { message: errorText || `Error desconocido: ${response.status}` };
         }
-        
+
         // Log detallado del error
         Logger.error('Error detallado de Wompi al crear transacción', new Error(JSON.stringify(errorObj)), {
           categoria: this.logCategory,
@@ -275,19 +301,41 @@ export class WompiService extends BaseService {
               amount_in_cents: amountInCents,
               currency: 'COP',
               customer_email: customerEmail,
+              customer_name: customerName,
               reference: reference,
               hasToken: !!tokenId,
               hasAcceptanceToken: !!acceptanceToken,
+              hasPhone: !!customerPhone,
             },
           },
         });
-        
-        // Construir mensaje de error más descriptivo
-        const errorMessage = errorObj.error?.message || 
-                            errorObj.message || 
-                            errorObj.error?.reason ||
-                            `Error al crear transacción en Wompi: ${response.status}`;
-        
+
+        // Construir mensaje de error detallado y amigable
+        let errorMessage = '';
+
+        if (response.status === 422) {
+          // Error 422: Unprocessable Entity - datos inválidos o faltantes
+          if (errorObj.error?.messages) {
+            // Si Wompi devuelve un objeto con mensajes detallados
+            const messages = Object.entries(errorObj.error.messages)
+              .map(([field, msg]) => `${field}: ${msg}`)
+              .join(', ');
+            errorMessage = `Datos inválidos - ${messages}`;
+          } else if (errorObj.error?.message) {
+            errorMessage = errorObj.error.message;
+          } else if (errorObj.message) {
+            errorMessage = errorObj.message;
+          } else {
+            errorMessage = 'Datos inválidos o faltantes. Verifica que el restaurante tenga email y teléfono válidos.';
+          }
+        } else {
+          // Otros errores
+          errorMessage = errorObj.error?.message ||
+                        errorObj.message ||
+                        errorObj.error?.reason ||
+                        `Error ${response.status}: ${response.statusText}`;
+        }
+
         throw new Error(`Error al crear transacción en Wompi: ${errorMessage}`);
       }
 
@@ -383,7 +431,8 @@ export class WompiService extends BaseService {
     isAnnual: boolean,
     customerEmail: string,
     customerName: string,
-    restauranteId: string
+    restauranteId: string,
+    customerPhone?: string
   ): Promise<{ transactionId: string; status: string }> {
     if (planType === 'free') {
       throw new Error('No se puede crear suscripción de pago para plan FREE');
@@ -397,7 +446,8 @@ export class WompiService extends BaseService {
       amountInCents,
       customerEmail,
       customerName,
-      reference
+      reference,
+      customerPhone
     );
 
     return {
