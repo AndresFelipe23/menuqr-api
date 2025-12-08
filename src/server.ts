@@ -46,6 +46,11 @@ const finalCorsOrigins = isProduction
   ? corsOrigins
   : [...new Set([...corsOrigins, ...defaultDevOrigins])]; // Combinar y eliminar duplicados
 
+// Log de orígenes permitidos en producción
+if (isProduction) {
+  console.log(`🔒 CORS en producción - Orígenes permitidos: ${finalCorsOrigins.join(', ')}`);
+}
+
 // Log de configuración de CORS para debugging
 if (!isProduction) {
   console.log('🔓 CORS configurado en modo desarrollo - permitiendo todos los orígenes');
@@ -61,10 +66,13 @@ app.use(cors({
     
     // En producción, solo permitir orígenes configurados
     if (isProduction) {
+      // Verificar si el origen está en la lista o si se permite '*'
       if (finalCorsOrigins.includes(origin) || finalCorsOrigins.includes('*')) {
+        console.log(`✅ CORS permitido (producción): ${origin}`);
         callback(null, true);
       } else {
         console.warn(`❌ CORS bloqueado en producción: ${origin}`);
+        console.warn(`   Orígenes permitidos: ${finalCorsOrigins.join(', ')}`);
         callback(new Error('Not allowed by CORS'));
       }
     } else {

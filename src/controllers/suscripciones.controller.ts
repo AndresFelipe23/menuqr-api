@@ -104,13 +104,32 @@ export class SuscripcionesController extends BaseController {
       // Verificar si ya existe una suscripción activa
       const suscripcionExistente = await this.suscripcionesService.obtenerPorRestauranteId(user.restauranteId);
       
+      // Permitir upgrade si tiene FREE y quiere PRO/PREMIUM, o PRO y quiere PREMIUM
       if (suscripcionExistente && suscripcionExistente.estado === 'active') {
-        return this.responseUtil.error(
-          res,
-          'Ya tienes una suscripción activa. Actualiza tu plan desde la página de planes.',
-          409,
-          'SUBSCRIPTION_ALREADY_ACTIVE'
-        );
+        const esUpgrade = (suscripcionExistente.tipoPlan === 'free' && (plan === 'pro' || plan === 'premium')) ||
+                          (suscripcionExistente.tipoPlan === 'pro' && plan === 'premium');
+        
+        // Si es el mismo plan, rechazar
+        if (suscripcionExistente.tipoPlan === plan) {
+          return this.responseUtil.error(
+            res,
+            'Ya tienes una suscripción activa con este plan.',
+            409,
+            'SUBSCRIPTION_ALREADY_ACTIVE'
+          );
+        }
+        
+        // Si no es un upgrade válido, rechazar
+        if (!esUpgrade) {
+          return this.responseUtil.error(
+            res,
+            'No puedes cambiar a un plan inferior. Cancela tu suscripción actual primero.',
+            409,
+            'INVALID_DOWNGRADE'
+          );
+        }
+        
+        // Si es un upgrade válido, continuar con la creación (se cancelará la anterior después del pago)
       }
 
       // Crear suscripción pendiente/incomplete que se actualizará cuando llegue el webhook
@@ -122,11 +141,38 @@ export class SuscripcionesController extends BaseController {
         // No incluimos paymentMethodId porque aún no tenemos la transacción
       };
 
-      const suscripcion = await this.suscripcionesService.crear(
-        crearSuscripcionDto,
-        user.id,
-        this.getRequestInfo(req)
-      );
+      // Crear suscripción de forma asíncrona para que no bloquee la respuesta
+      // El webhook se encargará de actualizarla cuando se complete el pago
+      let suscripcion;
+      try {
+        suscripcion = await this.suscripcionesService.crear(
+          crearSuscripcionDto,
+          user.id,
+          this.getRequestInfo(req)
+        );
+        
+        Logger.info('Suscripción creada exitosamente para payment link', {
+          categoria: LogCategory.NEGOCIO,
+          detalle: { 
+            restauranteId: user.restauranteId, 
+            plan, 
+            isAnnual, 
+            suscripcionId: suscripcion.id,
+            estado: suscripcion.estado 
+          },
+        });
+      } catch (error: any) {
+        Logger.error('Error al crear suscripción para payment link', error instanceof Error ? error : new Error(String(error)), {
+          categoria: LogCategory.NEGOCIO,
+          detalle: { restauranteId: user.restauranteId, plan, isAnnual },
+        });
+        return this.responseUtil.error(
+          res,
+          'Error al preparar la suscripción. Por favor, intenta nuevamente.',
+          500,
+          'SUBSCRIPTION_CREATION_ERROR'
+        );
+      }
 
       // Construir la URL del payment link con parámetros
       const url = new URL(paymentLink);
