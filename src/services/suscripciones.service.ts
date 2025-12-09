@@ -430,37 +430,86 @@ export class SuscripcionesService extends BaseService {
       // Continuar con la creación en BD más abajo
     }
 
-    // Crear suscripción en BD
-    // Nota: Para Wompi, almacenamos el transaction_id en stripe_subscription_id
-    // y el payment_provider se puede identificar por el formato del ID o agregar un campo separado
-    const resultado = await AppDataSource.query(
-      `INSERT INTO suscripciones (
-        restaurante_id, tipo_plan, estado, stripe_subscription_id, stripe_customer_id,
-        inicio_periodo_actual, fin_periodo_actual, fecha_creacion, fecha_actualizacion
-      )
-      OUTPUT INSERTED.id, INSERTED.restaurante_id, INSERTED.tipo_plan, INSERTED.estado,
-        INSERTED.stripe_subscription_id, INSERTED.stripe_customer_id,
-        INSERTED.inicio_periodo_actual, INSERTED.fin_periodo_actual,
-        INSERTED.cancelar_al_fin_periodo, INSERTED.fecha_cancelacion,
-        INSERTED.fecha_creacion, INSERTED.fecha_actualizacion
-      VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @7)`,
-      [
-        crearSuscripcionDto.restauranteId,
-        crearSuscripcionDto.tipoPlan,
-        estado,
-        paymentProvider === 'wompi' ? wompiTransactionId : stripeSubscriptionId,
-        paymentProvider === 'stripe' ? stripeCustomerId : null,
-        inicioPeriodo,
-        finPeriodo,
-        fechaActual,
-      ]
-    );
+    // Si ya existe una suscripción, actualizarla en lugar de crear una nueva
+    let suscripcionCreada: Suscripcion;
 
-    if (!resultado || resultado.length === 0) {
-      this.handleError('Error al crear la suscripción', null, 500);
+    if (suscripcionExistente) {
+      // Actualizar suscripción existente (upgrade de FREE a PRO/PREMIUM, o PRO a PREMIUM)
+      Logger.info('Actualizando suscripción existente (upgrade)', {
+        categoria: this.logCategory,
+        detalle: {
+          suscripcionId: suscripcionExistente.id,
+          planAnterior: suscripcionExistente.tipoPlan,
+          planNuevo: crearSuscripcionDto.tipoPlan,
+          restauranteId: crearSuscripcionDto.restauranteId,
+        },
+      });
+
+      const resultado = await AppDataSource.query(
+        `UPDATE suscripciones
+         SET tipo_plan = @0,
+             estado = @1,
+             stripe_subscription_id = @2,
+             stripe_customer_id = @3,
+             inicio_periodo_actual = @4,
+             fin_periodo_actual = @5,
+             fecha_actualizacion = @6
+         OUTPUT INSERTED.id, INSERTED.restaurante_id, INSERTED.tipo_plan, INSERTED.estado,
+           INSERTED.stripe_subscription_id, INSERTED.stripe_customer_id,
+           INSERTED.inicio_periodo_actual, INSERTED.fin_periodo_actual,
+           INSERTED.cancelar_al_fin_periodo, INSERTED.fecha_cancelacion,
+           INSERTED.fecha_creacion, INSERTED.fecha_actualizacion
+         WHERE id = @7`,
+        [
+          crearSuscripcionDto.tipoPlan,
+          estado,
+          paymentProvider === 'wompi' ? wompiTransactionId : stripeSubscriptionId,
+          paymentProvider === 'stripe' ? stripeCustomerId : null,
+          inicioPeriodo,
+          finPeriodo,
+          fechaActual,
+          suscripcionExistente.id,
+        ]
+      );
+
+      if (!resultado || resultado.length === 0) {
+        this.handleError('Error al actualizar la suscripción', null, 500);
+      }
+
+      suscripcionCreada = this.mapToSuscripcion(resultado[0]);
+    } else {
+      // Crear nueva suscripción (no existe ninguna previa)
+      // Nota: Para Wompi, almacenamos el transaction_id en stripe_subscription_id
+      // y el payment_provider se puede identificar por el formato del ID o agregar un campo separado
+      const resultado = await AppDataSource.query(
+        `INSERT INTO suscripciones (
+          restaurante_id, tipo_plan, estado, stripe_subscription_id, stripe_customer_id,
+          inicio_periodo_actual, fin_periodo_actual, fecha_creacion, fecha_actualizacion
+        )
+        OUTPUT INSERTED.id, INSERTED.restaurante_id, INSERTED.tipo_plan, INSERTED.estado,
+          INSERTED.stripe_subscription_id, INSERTED.stripe_customer_id,
+          INSERTED.inicio_periodo_actual, INSERTED.fin_periodo_actual,
+          INSERTED.cancelar_al_fin_periodo, INSERTED.fecha_cancelacion,
+          INSERTED.fecha_creacion, INSERTED.fecha_actualizacion
+        VALUES (@0, @1, @2, @3, @4, @5, @6, @7, @7)`,
+        [
+          crearSuscripcionDto.restauranteId,
+          crearSuscripcionDto.tipoPlan,
+          estado,
+          paymentProvider === 'wompi' ? wompiTransactionId : stripeSubscriptionId,
+          paymentProvider === 'stripe' ? stripeCustomerId : null,
+          inicioPeriodo,
+          finPeriodo,
+          fechaActual,
+        ]
+      );
+
+      if (!resultado || resultado.length === 0) {
+        this.handleError('Error al crear la suscripción', null, 500);
+      }
+
+      suscripcionCreada = this.mapToSuscripcion(resultado[0]);
     }
-
-    const suscripcionCreada = this.mapToSuscripcion(resultado[0]);
 
     // Registrar el pago si la suscripción es de pago (no free) y el proveedor es Stripe
     // Para Wompi, el pago ya se registró arriba
@@ -535,28 +584,8 @@ export class SuscripcionesService extends BaseService {
       }
     }
 
-    // Si había una suscripción anterior activa y esta es una nueva (upgrade), cancelar la anterior
-    if (suscripcionExistente && suscripcionExistente.estado === 'active' && suscripcionCreada && suscripcionCreada.id !== suscripcionExistente.id) {
-      // Cancelar la suscripción anterior (FREE o inferior)
-      await AppDataSource.query(
-        `UPDATE suscripciones 
-         SET estado = 'cancelled', 
-             fecha_cancelacion = @0,
-             fecha_actualizacion = @0
-         WHERE id = @1 AND restaurante_id = @2 AND estado = 'active'`,
-        [fechaActual, suscripcionExistente.id, crearSuscripcionDto.restauranteId]
-      );
-      
-      Logger.info('Suscripción anterior cancelada debido a upgrade', {
-        categoria: this.logCategory,
-        detalle: { 
-          suscripcionAnteriorId: suscripcionExistente.id,
-          suscripcionNuevaId: suscripcionCreada.id,
-          planAnterior: suscripcionExistente.tipoPlan,
-          planNuevo: crearSuscripcionDto.tipoPlan
-        },
-      });
-    }
+    // Nota: Ya no necesitamos cancelar la suscripción anterior porque ahora
+    // actualizamos la suscripción existente en lugar de crear una nueva
 
     // Actualizar estado de suscripción en restaurante
     await AppDataSource.query(
