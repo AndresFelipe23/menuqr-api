@@ -241,9 +241,22 @@ export class WompiService extends BaseService {
          throw new Error('Token de tarjeta inválido. Debe ser un string no vacío.');
        }
 
+       // Validar que el tokenId no sea el JSON original (debe ser un token de Wompi)
+       // Los tokens de Wompi son strings que no empiezan con '{'
+       if (tokenId.trim().startsWith('{')) {
+         Logger.error('El tokenId parece ser un JSON en lugar de un token válido de Wompi', new Error('Token inválido'), {
+           categoria: this.logCategory,
+           detalle: {
+             tokenId: tokenId.substring(0, 100) + '...',
+             tokenLength: tokenId.length,
+           },
+         });
+         throw new Error('Token inválido. El token debe ser generado por Wompi, no un objeto JSON.');
+       }
+
        // Construir el body según la documentación oficial de Wompi
        // https://docs.wompi.co/docs/colombia/referencia-api/
-       // El payment_method debe ser un objeto simple con type y token
+       // El payment_method debe incluir type, token e installments
        const requestBody: any = {
          acceptance_token: acceptanceToken,
          amount_in_cents: amountInCents,
@@ -253,6 +266,7 @@ export class WompiService extends BaseService {
          payment_method: {
            type: 'CARD',
            token: tokenId.trim(), // Asegurar que sea string sin espacios
+           installments: 1, // Wompi requiere installments y debe ser >= 1
          },
        };
 

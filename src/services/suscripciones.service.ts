@@ -186,38 +186,78 @@ export class SuscripcionesService extends BaseService {
               const parsedData = JSON.parse(crearSuscripcionDto.paymentMethodId || '');
               if (parsedData && parsedData.type === 'wompi' && parsedData.cardData) {
                 // Crear token en Wompi con los datos de la tarjeta
-                tokenId = await wompiService.createToken(JSON.stringify(parsedData.cardData));
+                try {
+                  tokenId = await wompiService.createToken(JSON.stringify(parsedData.cardData));
+                  
+                  // Validar que el token obtenido sea válido (no debe ser el JSON original)
+                  if (!tokenId || tokenId.trim().startsWith('{')) {
+                    Logger.error('Token obtenido de Wompi es inválido', new Error('Token inválido'), {
+                      categoria: this.logCategory,
+                      detalle: {
+                        tokenId: tokenId?.substring(0, 50) || 'undefined',
+                        tokenLength: tokenId?.length || 0,
+                      },
+                    });
+                    this.handleError('Error al generar el token de la tarjeta. Por favor, verifica los datos e intenta nuevamente.', null, 400);
+                  }
+                } catch (tokenError: any) {
+                  // Si falla la creación del token, no continuar
+                  Logger.error('Error al crear token en Wompi', tokenError instanceof Error ? tokenError : new Error(String(tokenError)), {
+                    categoria: this.logCategory,
+                    detalle: {
+                      error: tokenError.message,
+                    },
+                  });
+                  this.handleError(`Error al procesar la tarjeta: ${tokenError.message || 'Verifica que la tarjeta sea válida'}`, null, 400);
+                }
               } else {
-                // Si es un objeto pero no tiene la estructura esperada, usar el paymentMethodId original
-                tokenId = typeof crearSuscripcionDto.paymentMethodId === 'string' 
-                  ? crearSuscripcionDto.paymentMethodId 
-                  : String(crearSuscripcionDto.paymentMethodId);
-              }
-            } catch (e) {
-              // Si no es JSON, asumir que ya es un token string
-              if (typeof crearSuscripcionDto.paymentMethodId === 'string') {
-                tokenId = crearSuscripcionDto.paymentMethodId;
-              } else {
-                // Si es un objeto, intentar convertirlo a string (no debería pasar, pero por seguridad)
-                Logger.warn('paymentMethodId no es un string, intentando convertir', {
+                // Si es un objeto pero no tiene la estructura esperada, rechazar
+                Logger.error('paymentMethodId tiene formato JSON pero estructura inválida', new Error('Formato inválido'), {
                   categoria: this.logCategory,
-                  detalle: { 
-                    type: typeof crearSuscripcionDto.paymentMethodId,
-                    value: String(crearSuscripcionDto.paymentMethodId).substring(0, 50)
+                  detalle: {
+                    parsedDataType: typeof parsedData,
+                    hasType: !!parsedData?.type,
+                    hasCardData: !!parsedData?.cardData,
                   },
                 });
-                tokenId = String(crearSuscripcionDto.paymentMethodId);
+                this.handleError('Formato de datos de tarjeta inválido. Por favor, intenta nuevamente.', null, 400);
+              }
+            } catch (e) {
+              // Si no es JSON válido, asumir que ya es un token string
+              if (typeof crearSuscripcionDto.paymentMethodId === 'string') {
+                tokenId = crearSuscripcionDto.paymentMethodId;
+                
+                // Validar que no sea el JSON original
+                if (tokenId.trim().startsWith('{')) {
+                  Logger.error('paymentMethodId parece ser un JSON pero no se pudo parsear', new Error('Formato inválido'), {
+                    categoria: this.logCategory,
+                    detalle: {
+                      paymentMethodId: tokenId.substring(0, 100),
+                    },
+                  });
+                  this.handleError('Formato de datos de tarjeta inválido. Por favor, intenta nuevamente.', null, 400);
+                }
+              } else {
+                Logger.error('paymentMethodId no es un string válido', new Error('Tipo inválido'), {
+                  categoria: this.logCategory,
+                  detalle: {
+                    type: typeof crearSuscripcionDto.paymentMethodId,
+                  },
+                });
+                this.handleError('Error: Formato de datos de pago inválido.', null, 400);
               }
             }
             
-            // Validar que tokenId sea un string válido y no vacío
-            if (!tokenId || typeof tokenId !== 'string' || !tokenId.trim()) {
+            // Validar que tokenId sea un string válido y no vacío, y que no sea un JSON
+            if (!tokenId || typeof tokenId !== 'string' || !tokenId.trim() || tokenId.trim().startsWith('{')) {
               Logger.error('Token inválido después del procesamiento', new Error('Token inválido'), {
                 categoria: this.logCategory,
                 detalle: {
                   originalPaymentMethodId: typeof crearSuscripcionDto.paymentMethodId,
                   tokenId: typeof tokenId,
                   tokenIdLength: tokenId?.length || 0,
+                  tokenIdPreview: tokenId?.substring(0, 50) || 'undefined',
+                  startsWithBrace: tokenId?.trim().startsWith('{') || false,
                 },
               });
               this.handleError('Error: Token de tarjeta inválido. Por favor, intenta nuevamente.', null, 400);
