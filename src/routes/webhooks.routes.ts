@@ -268,7 +268,9 @@ router.post('/wompi', express.json(), async (req: Request, res: Response) => {
       detalle: { 
         event: event.event || event.data?.status, 
         hasSignature: !!signature,
-        hasEventsSecret: !!eventsSecret 
+        hasEventsSecret: !!eventsSecret,
+        eventBody: JSON.stringify(event).substring(0, 1000), // Primeros 1000 caracteres para debugging
+        headers: JSON.stringify(req.headers).substring(0, 500)
       },
     });
 
@@ -348,7 +350,14 @@ async function handleWompiTransactionUpdate(transaction: any) {
 
   Logger.info('Procesando transacción de Wompi', {
     categoria: LogCategory.SISTEMA,
-    detalle: { transactionId, status, reference },
+    detalle: { 
+      transactionId, 
+      status, 
+      reference, 
+      amountInCents,
+      currency,
+      transactionData: JSON.stringify(transaction).substring(0, 500) // Primeros 500 caracteres para debugging
+    },
   });
 
   // Buscar suscripción por transaction ID o por referencia
@@ -367,10 +376,40 @@ async function handleWompiTransactionUpdate(transaction: any) {
     // La referencia puede tener formato: SUB_restauranteId_timestamp
     const restauranteIdMatch = reference.match(/SUB_([^_]+)/);
     if (restauranteIdMatch && restauranteIdMatch[1]) {
+      const restauranteId = restauranteIdMatch[1];
+      
+      // Primero buscar suscripciones incomplete del restaurante (más recientes primero)
       suscripcion = await AppDataSource.query(
-        `SELECT * FROM suscripciones WHERE restaurante_id = @0 ORDER BY fecha_creacion DESC`,
-        [restauranteIdMatch[1]]
+        `SELECT TOP 1 * FROM suscripciones 
+         WHERE restaurante_id = @0 
+           AND estado = 'incomplete'
+           AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '')
+         ORDER BY fecha_creacion DESC`,
+        [restauranteId]
       );
+      
+      // Si no encuentra incomplete, buscar cualquier suscripción del restaurante
+      if (!suscripcion || suscripcion.length === 0) {
+        suscripcion = await AppDataSource.query(
+          `SELECT TOP 1 * FROM suscripciones 
+           WHERE restaurante_id = @0 
+           ORDER BY fecha_creacion DESC`,
+          [restauranteId]
+        );
+      }
+      
+      if (suscripcion && suscripcion.length > 0) {
+        Logger.info('Suscripción encontrada por referencia', {
+          categoria: LogCategory.SISTEMA,
+          detalle: { 
+            referencia: reference,
+            restauranteId: restauranteId,
+            suscripcionId: suscripcion[0].id,
+            estado: suscripcion[0].estado,
+            tipoPlan: suscripcion[0].tipo_plan
+          },
+        });
+      }
     }
   }
 
@@ -404,18 +443,18 @@ async function handleWompiTransactionUpdate(transaction: any) {
       suscripcion = await AppDataSource.query(
         `SELECT TOP 1 * FROM suscripciones 
          WHERE tipo_plan = @0 
-           AND estado IN ('incomplete', 'pending')
+           AND estado = 'incomplete'
            AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '')
          ORDER BY fecha_creacion DESC`,
         [tipoPlanEsperado]
       );
       
-      // Si no encuentra sin transactionId, buscar cualquier incomplete/pending del plan
+      // Si no encuentra sin transactionId, buscar cualquier incomplete del plan
       if (!suscripcion || suscripcion.length === 0) {
         suscripcion = await AppDataSource.query(
           `SELECT TOP 1 * FROM suscripciones 
            WHERE tipo_plan = @0 
-             AND estado IN ('incomplete', 'pending')
+             AND estado = 'incomplete'
            ORDER BY fecha_creacion DESC`,
           [tipoPlanEsperado]
         );
