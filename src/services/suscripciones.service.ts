@@ -98,12 +98,27 @@ export class SuscripcionesService extends BaseService {
       });
     }
 
-    // Verificar si ya existe una suscripción activa
+    // Verificar si ya existe una suscripción
     const suscripcionExistente = await this.obtenerPorRestauranteId(crearSuscripcionDto.restauranteId);
     
-    // Si ya tiene una suscripción activa y es un upgrade (de FREE a PRO/PREMIUM o de PRO a PREMIUM)
-    // Actualizar la suscripción existente en lugar de crear una nueva
-    if (suscripcionExistente && suscripcionExistente.estado === 'active') {
+    // Si hay una suscripción incomplete o pending, permitir crear una nueva
+    // Esto puede pasar si un pago anterior no se completó
+    if (suscripcionExistente && (suscripcionExistente.estado === 'incomplete' || suscripcionExistente.estado === 'pending')) {
+      Logger.info('Existe suscripción incomplete/pending, se creará una nueva', {
+        categoria: this.logCategory,
+        detalle: { 
+          restauranteId: crearSuscripcionDto.restauranteId,
+          suscripcionId: suscripcionExistente.id,
+          estadoActual: suscripcionExistente.estado,
+          planActual: suscripcionExistente.tipoPlan,
+          planNuevo: crearSuscripcionDto.tipoPlan 
+        },
+      });
+      // Permitir continuar con la creación de una nueva suscripción
+      // La anterior quedará como incomplete/pending y no afectará la nueva
+    } else if (suscripcionExistente && suscripcionExistente.estado === 'active') {
+      // Si ya tiene una suscripción activa y es un upgrade (de FREE a PRO/PREMIUM o de PRO a PREMIUM)
+      // Actualizar la suscripción existente en lugar de crear una nueva
       // Si el plan nuevo es igual al actual, rechazar
       if (suscripcionExistente.tipoPlan === crearSuscripcionDto.tipoPlan) {
         this.handleError('Ya tienes una suscripción activa con este plan', null, 409);
