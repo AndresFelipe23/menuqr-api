@@ -101,11 +101,26 @@ export class SuscripcionesController extends BaseController {
     const reference = `SUB_${user.restauranteId}_${Date.now()}`;
     
     try {
-      // Verificar si ya existe una suscripción activa
+      // Verificar si ya existe una suscripción
       const suscripcionExistente = await this.suscripcionesService.obtenerPorRestauranteId(user.restauranteId);
       
-      // Permitir upgrade si tiene FREE y quiere PRO/PREMIUM, o PRO y quiere PREMIUM
-      if (suscripcionExistente && suscripcionExistente.estado === 'active') {
+      // Si hay una suscripción incomplete o pending, permitir crear una nueva o actualizar
+      // Esto puede pasar si el pago anterior no se completó o está pendiente
+      if (suscripcionExistente && (suscripcionExistente.estado === 'incomplete' || suscripcionExistente.estado === 'pending')) {
+        Logger.info('Existe suscripción incomplete/pending, se creará una nueva o se actualizará', {
+          categoria: LogCategory.NEGOCIO,
+          detalle: { 
+            restauranteId: user.restauranteId,
+            suscripcionId: suscripcionExistente.id,
+            estadoActual: suscripcionExistente.estado,
+            planActual: suscripcionExistente.tipoPlan,
+            planNuevo: plan 
+          },
+        });
+        // Continuar con la creación de una nueva suscripción
+        // El webhook se encargará de activarla cuando se complete el pago
+      } else if (suscripcionExistente && suscripcionExistente.estado === 'active') {
+        // Si tiene una suscripción activa, verificar si es un upgrade válido
         const esUpgrade = (suscripcionExistente.tipoPlan === 'free' && (plan === 'pro' || plan === 'premium')) ||
                           (suscripcionExistente.tipoPlan === 'pro' && plan === 'premium');
         
@@ -130,6 +145,14 @@ export class SuscripcionesController extends BaseController {
         }
         
         // Si es un upgrade válido, continuar con la creación (se cancelará la anterior después del pago)
+        Logger.info('Upgrade de plan detectado', {
+          categoria: LogCategory.NEGOCIO,
+          detalle: { 
+            restauranteId: user.restauranteId,
+            planAnterior: suscripcionExistente.tipoPlan,
+            planNuevo: plan 
+          },
+        });
       }
 
       // Crear suscripción pendiente/incomplete que se actualizará cuando llegue el webhook
