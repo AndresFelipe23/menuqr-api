@@ -101,10 +101,10 @@ export class SuscripcionesService extends BaseService {
     // Verificar si ya existe una suscripción
     const suscripcionExistente = await this.obtenerPorRestauranteId(crearSuscripcionDto.restauranteId);
     
-    // Si hay una suscripción incomplete o pending, permitir crear una nueva
+    // Si hay una suscripción incomplete, permitir crear una nueva
     // Esto puede pasar si un pago anterior no se completó
-    if (suscripcionExistente && (suscripcionExistente.estado === 'incomplete' || suscripcionExistente.estado === 'pending')) {
-      Logger.info('Existe suscripción incomplete/pending, se creará una nueva', {
+    if (suscripcionExistente && suscripcionExistente.estado === 'incomplete') {
+      Logger.info('Existe suscripción incomplete, se creará una nueva', {
         categoria: this.logCategory,
         detalle: { 
           restauranteId: crearSuscripcionDto.restauranteId,
@@ -115,7 +115,7 @@ export class SuscripcionesService extends BaseService {
         },
       });
       // Permitir continuar con la creación de una nueva suscripción
-      // La anterior quedará como incomplete/pending y no afectará la nueva
+      // La anterior quedará como incomplete y no afectará la nueva
     } else if (suscripcionExistente && suscripcionExistente.estado === 'active') {
       // Si ya tiene una suscripción activa y es un upgrade (de FREE a PRO/PREMIUM o de PRO a PREMIUM)
       // Actualizar la suscripción existente en lugar de crear una nueva
