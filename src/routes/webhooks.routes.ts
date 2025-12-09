@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import express from 'express';
 import crypto from 'crypto';
 import { stripe } from '../config/stripe.config';
-import { getWompiConfig } from '../config/wompi.config';
+import { getWompiConfig, WOMPI_PLAN_PRICES } from '../config/wompi.config';
 import { WompiService } from '../services/wompi.service';
 import { AppDataSource } from '../config/database';
 import { Logger, LogCategory } from '../utils/logger';
@@ -374,10 +374,65 @@ async function handleWompiTransactionUpdate(transaction: any) {
     }
   }
 
+  // Si aún no se encuentra, intentar buscar por monto y restauranteId más reciente
+  // Los payment links de Wompi pueden no incluir referencia, pero podemos identificar por el monto
+  if ((!suscripcion || suscripcion.length === 0) && amountInCents) {
+    const amountInCOP = amountInCents / 100;
+    
+    // Identificar el plan por el monto usando los precios configurados
+    // PRO mensual: $36,000 COP
+    // PREMIUM mensual: $56,000 COP
+    let tipoPlanEsperado: 'pro' | 'premium' | null = null;
+    const precioPro = WOMPI_PLAN_PRICES.pro.monthly;
+    const precioPremium = WOMPI_PLAN_PRICES.premium.monthly;
+    
+    // Tolerancia de 1000 COP para variaciones en el monto
+    if (Math.abs(amountInCOP - precioPro) < 1000) {
+      tipoPlanEsperado = 'pro';
+    } else if (Math.abs(amountInCOP - precioPremium) < 1000) {
+      tipoPlanEsperado = 'premium';
+    }
+    
+    if (tipoPlanEsperado) {
+      Logger.info('Intentando identificar suscripción por monto', {
+        categoria: LogCategory.SISTEMA,
+        detalle: { amountInCOP, tipoPlanEsperado, transactionId },
+      });
+      
+      // Buscar suscripciones incompletas del plan esperado, ordenadas por fecha más reciente
+      suscripcion = await AppDataSource.query(
+        `SELECT TOP 1 * FROM suscripciones 
+         WHERE tipo_plan = @0 
+           AND estado IN ('incomplete', 'pending')
+         ORDER BY fecha_creacion DESC`,
+        [tipoPlanEsperado]
+      );
+      
+      // Si se encuentra, actualizar con el transactionId para futuras búsquedas
+      if (suscripcion && suscripcion.length > 0) {
+        Logger.info('Suscripción encontrada por monto', {
+          categoria: LogCategory.SISTEMA,
+          detalle: { 
+            suscripcionId: suscripcion[0].id,
+            restauranteId: suscripcion[0].restaurante_id,
+            tipoPlan: suscripcion[0].tipo_plan,
+            transactionId 
+          },
+        });
+        
+        // Actualizar el stripe_subscription_id con el transactionId para futuras búsquedas
+        await AppDataSource.query(
+          `UPDATE suscripciones SET stripe_subscription_id = @0 WHERE id = @1`,
+          [transactionId, suscripcion[0].id]
+        );
+      }
+    }
+  }
+
   if (!suscripcion || suscripcion.length === 0) {
     Logger.warn('Webhook de Wompi: Suscripción no encontrada para transacción', {
       categoria: LogCategory.SISTEMA,
-      detalle: { transactionId, reference },
+      detalle: { transactionId, reference, amountInCents },
     });
     return;
   }
@@ -416,21 +471,23 @@ async function handleWompiTransactionUpdate(transaction: any) {
 
     // Si la suscripción está en estado incomplete, activarla
     if (suscripcion[0].estado === 'incomplete' || suscripcion[0].estado === 'pending') {
-      // Calcular fechas de período (mensual o anual según el monto)
-      const isAnnual = amount >= 300000; // Si es >= 300k COP es probablemente anual
+      // Los planes son mensuales, así que siempre calcular 1 mes
+      // (No hay planes anuales según la configuración actual)
+      const isAnnual = false; // Siempre mensual
       const fechaActualDate = new Date(fechaActual);
       const finPeriodoDate = new Date(fechaActualDate);
-      finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
+      finPeriodoDate.setMonth(finPeriodoDate.getMonth() + 1); // 1 mes
       const finPeriodoStr = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
 
       await AppDataSource.query(
         `UPDATE suscripciones 
          SET estado = 'active',
-             inicio_periodo_actual = @0,
-             fin_periodo_actual = @1,
-             fecha_actualizacion = @2
-         WHERE id = @3`,
-        [fechaActualDate.toISOString().replace('T', ' ').slice(0, 23), finPeriodoStr, fechaActual, suscripcion[0].id]
+             stripe_subscription_id = @0, -- Asegurar que el transactionId esté guardado
+             inicio_periodo_actual = @1,
+             fin_periodo_actual = @2,
+             fecha_actualizacion = @3
+         WHERE id = @4`,
+        [transactionId, fechaActualDate.toISOString().replace('T', ' ').slice(0, 23), finPeriodoStr, fechaActual, suscripcion[0].id]
       );
 
       // Actualizar estado del restaurante
@@ -439,6 +496,17 @@ async function handleWompiTransactionUpdate(transaction: any) {
          WHERE id = @1`,
         [fechaActual, suscripcion[0].restaurante_id]
       );
+
+      Logger.info('Webhook de Wompi: Suscripción activada desde incomplete/pending', {
+        categoria: LogCategory.SISTEMA,
+        detalle: { 
+          suscripcionId: suscripcion[0].id,
+          restauranteId: suscripcion[0].restaurante_id,
+          tipoPlan: suscripcion[0].tipo_plan,
+          transactionId,
+          monto: amount 
+        },
+      });
     }
 
     // Verificar si el pago ya existe antes de crear uno nuevo
