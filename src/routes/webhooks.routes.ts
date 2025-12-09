@@ -498,17 +498,16 @@ async function handleWompiTransactionUpdate(transaction: any) {
       [fechaActual, suscripcionActual.restaurante_id]
     );
 
-      Logger.info('Webhook de Wompi: Suscripción activada desde incomplete/pending', {
-        categoria: LogCategory.SISTEMA,
-        detalle: { 
-          suscripcionId: suscripcion[0].id,
-          restauranteId: suscripcion[0].restaurante_id,
-          tipoPlan: suscripcion[0].tipo_plan,
-          transactionId,
-          monto: amount 
-        },
-      });
-    }
+    Logger.info('Webhook de Wompi: Suscripción activada desde incomplete/pending', {
+      categoria: LogCategory.SISTEMA,
+      detalle: { 
+        suscripcionId: suscripcionActual.id,
+        restauranteId: suscripcionActual.restaurante_id,
+        tipoPlan: suscripcionActual.tipo_plan,
+        transactionId,
+        monto: amount 
+      },
+    });
 
     // Verificar si el pago ya existe antes de crear uno nuevo
     const pagoExistente = await AppDataSource.query(
