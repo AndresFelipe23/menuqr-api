@@ -104,10 +104,10 @@ export class SuscripcionesController extends BaseController {
       // Verificar si ya existe una suscripción
       const suscripcionExistente = await this.suscripcionesService.obtenerPorRestauranteId(user.restauranteId);
       
-      // Si hay una suscripción incomplete o pending, permitir crear una nueva o actualizar
+      // Si hay una suscripción incomplete, permitir crear una nueva o actualizar
       // Esto puede pasar si el pago anterior no se completó o está pendiente
-      if (suscripcionExistente && (suscripcionExistente.estado === 'incomplete' || suscripcionExistente.estado === 'pending')) {
-        Logger.info('Existe suscripción incomplete/pending, se creará una nueva o se actualizará', {
+      if (suscripcionExistente && suscripcionExistente.estado === 'incomplete') {
+        Logger.info('Existe suscripción incomplete, se creará una nueva o se actualizará', {
           categoria: LogCategory.NEGOCIO,
           detalle: { 
             restauranteId: user.restauranteId,
