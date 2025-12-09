@@ -374,7 +374,7 @@ async function handleWompiTransactionUpdate(transaction: any) {
     }
   }
 
-  // Si aún no se encuentra, intentar buscar por monto y restauranteId más reciente
+  // Si aún no se encuentra, intentar buscar por monto y tipo de plan
   // Los payment links de Wompi pueden no incluir referencia, pero podemos identificar por el monto
   if ((!suscripcion || suscripcion.length === 0) && amountInCents) {
     const amountInCOP = amountInCents / 100;
@@ -386,27 +386,40 @@ async function handleWompiTransactionUpdate(transaction: any) {
     const precioPro = WOMPI_PLAN_PRICES.pro.monthly;
     const precioPremium = WOMPI_PLAN_PRICES.premium.monthly;
     
-    // Tolerancia de 1000 COP para variaciones en el monto
-    if (Math.abs(amountInCOP - precioPro) < 1000) {
+    // Tolerancia de 2000 COP para variaciones en el monto (puede haber pequeñas diferencias)
+    if (Math.abs(amountInCOP - precioPro) < 2000) {
       tipoPlanEsperado = 'pro';
-    } else if (Math.abs(amountInCOP - precioPremium) < 1000) {
+    } else if (Math.abs(amountInCOP - precioPremium) < 2000) {
       tipoPlanEsperado = 'premium';
     }
     
     if (tipoPlanEsperado) {
       Logger.info('Intentando identificar suscripción por monto', {
         categoria: LogCategory.SISTEMA,
-        detalle: { amountInCOP, tipoPlanEsperado, transactionId },
+        detalle: { amountInCOP, tipoPlanEsperado, transactionId, reference },
       });
       
       // Buscar suscripciones incompletas del plan esperado, ordenadas por fecha más reciente
+      // Priorizar las que no tienen stripe_subscription_id asignado aún
       suscripcion = await AppDataSource.query(
         `SELECT TOP 1 * FROM suscripciones 
          WHERE tipo_plan = @0 
            AND estado IN ('incomplete', 'pending')
+           AND (stripe_subscription_id IS NULL OR stripe_subscription_id = '')
          ORDER BY fecha_creacion DESC`,
         [tipoPlanEsperado]
       );
+      
+      // Si no encuentra sin transactionId, buscar cualquier incomplete/pending del plan
+      if (!suscripcion || suscripcion.length === 0) {
+        suscripcion = await AppDataSource.query(
+          `SELECT TOP 1 * FROM suscripciones 
+           WHERE tipo_plan = @0 
+             AND estado IN ('incomplete', 'pending')
+           ORDER BY fecha_creacion DESC`,
+          [tipoPlanEsperado]
+        );
+      }
       
       // Si se encuentra, actualizar con el transactionId para futuras búsquedas
       if (suscripcion && suscripcion.length > 0) {
@@ -416,11 +429,13 @@ async function handleWompiTransactionUpdate(transaction: any) {
             suscripcionId: suscripcion[0].id,
             restauranteId: suscripcion[0].restaurante_id,
             tipoPlan: suscripcion[0].tipo_plan,
+            estado: suscripcion[0].estado,
             transactionId 
           },
         });
         
-        // Actualizar el stripe_subscription_id con el transactionId para futuras búsquedas
+        // Actualizar el stripe_subscription_id con el transactionId ANTES de procesar el pago
+        // Esto asegura que futuras búsquedas encuentren esta suscripción
         await AppDataSource.query(
           `UPDATE suscripciones SET stripe_subscription_id = @0 WHERE id = @1`,
           [transactionId, suscripcion[0].id]
@@ -449,53 +464,39 @@ async function handleWompiTransactionUpdate(transaction: any) {
     estadoSuscripcion = 'incomplete';
   }
 
-  // Actualizar suscripción
-  await AppDataSource.query(
-    `UPDATE suscripciones 
-     SET estado = @0, 
-         fecha_actualizacion = @1
-     WHERE stripe_subscription_id = @2`,
-    [estadoSuscripcion, fechaActual, transactionId]
-  );
-
-  // Actualizar estado en restaurante
-  await AppDataSource.query(
-    `UPDATE restaurantes SET estado_suscripcion = @0, fecha_actualizacion = @1 
-     WHERE id = @2`,
-    [estadoSuscripcion, fechaActual, suscripcion[0].restaurante_id]
-  );
-
-  // Si el pago fue aprobado, crear o actualizar la suscripción si no existe
+  // Primero, asegurar que el transactionId esté guardado en la suscripción
+  // Esto es importante para futuras búsquedas y para evitar duplicados
+  const suscripcionActual = suscripcion[0];
+  
+  // Si el pago fue aprobado, activar la suscripción
   if (status === 'APPROVED' || status === 'APPROVED_PARTIAL') {
     const amount = amountInCents ? amountInCents / 100 : 0; // Convertir de centavos a pesos
 
-    // Si la suscripción está en estado incomplete, activarla
-    if (suscripcion[0].estado === 'incomplete' || suscripcion[0].estado === 'pending') {
-      // Los planes son mensuales, así que siempre calcular 1 mes
-      // (No hay planes anuales según la configuración actual)
-      const isAnnual = false; // Siempre mensual
-      const fechaActualDate = new Date(fechaActual);
-      const finPeriodoDate = new Date(fechaActualDate);
-      finPeriodoDate.setMonth(finPeriodoDate.getMonth() + 1); // 1 mes
-      const finPeriodoStr = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
+    // Los planes son mensuales, así que siempre calcular 1 mes
+    const isAnnual = false; // Siempre mensual
+    const fechaActualDate = new Date(fechaActual);
+    const finPeriodoDate = new Date(fechaActualDate);
+    finPeriodoDate.setMonth(finPeriodoDate.getMonth() + 1); // 1 mes
+    const finPeriodoStr = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
 
-      await AppDataSource.query(
-        `UPDATE suscripciones 
-         SET estado = 'active',
-             stripe_subscription_id = @0, -- Asegurar que el transactionId esté guardado
-             inicio_periodo_actual = @1,
-             fin_periodo_actual = @2,
-             fecha_actualizacion = @3
-         WHERE id = @4`,
-        [transactionId, fechaActualDate.toISOString().replace('T', ' ').slice(0, 23), finPeriodoStr, fechaActual, suscripcion[0].id]
-      );
+    // Actualizar la suscripción a estado active con todos los datos necesarios
+    await AppDataSource.query(
+      `UPDATE suscripciones 
+       SET estado = 'active',
+           stripe_subscription_id = @0,
+           inicio_periodo_actual = @1,
+           fin_periodo_actual = @2,
+           fecha_actualizacion = @3
+       WHERE id = @4`,
+      [transactionId, fechaActualDate.toISOString().replace('T', ' ').slice(0, 23), finPeriodoStr, fechaActual, suscripcionActual.id]
+    );
 
-      // Actualizar estado del restaurante
-      await AppDataSource.query(
-        `UPDATE restaurantes SET estado_suscripcion = 'active', fecha_actualizacion = @0 
-         WHERE id = @1`,
-        [fechaActual, suscripcion[0].restaurante_id]
-      );
+    // Actualizar estado del restaurante
+    await AppDataSource.query(
+      `UPDATE restaurantes SET estado_suscripcion = 'active', fecha_actualizacion = @0 
+       WHERE id = @1`,
+      [fechaActual, suscripcionActual.restaurante_id]
+    );
 
       Logger.info('Webhook de Wompi: Suscripción activada desde incomplete/pending', {
         categoria: LogCategory.SISTEMA,
@@ -527,8 +528,8 @@ async function handleWompiTransactionUpdate(transaction: any) {
         )
         VALUES (@0, @1, @2, @3, @4, 'exitoso', @5, @6)`,
         [
-          suscripcion[0].id,
-          suscripcion[0].restaurante_id,
+          suscripcionActual.id,
+          suscripcionActual.restaurante_id,
           amount,
           currency.toUpperCase(),
           transactionId,
@@ -539,14 +540,31 @@ async function handleWompiTransactionUpdate(transaction: any) {
 
       Logger.info('Webhook de Wompi: Pago registrado exitosamente', {
         categoria: LogCategory.SISTEMA,
-        detalle: { suscripcionId: suscripcion[0].id, monto: amount, transactionId },
+        detalle: { suscripcionId: suscripcionActual.id, monto: amount, transactionId },
       });
     }
+  } else {
+    // Si el pago NO fue aprobado, solo actualizar el estado sin activar
+    await AppDataSource.query(
+      `UPDATE suscripciones 
+       SET estado = @0, 
+           stripe_subscription_id = @1,
+           fecha_actualizacion = @2
+       WHERE id = @3`,
+      [estadoSuscripcion, transactionId, fechaActual, suscripcionActual.id]
+    );
+
+    // Actualizar estado en restaurante
+    await AppDataSource.query(
+      `UPDATE restaurantes SET estado_suscripcion = @0, fecha_actualizacion = @1 
+       WHERE id = @2`,
+      [estadoSuscripcion, fechaActual, suscripcionActual.restaurante_id]
+    );
   }
 
-  Logger.info('Webhook de Wompi: Transacción actualizada', {
+  Logger.info('Webhook de Wompi: Transacción procesada', {
     categoria: LogCategory.SISTEMA,
-    detalle: { suscripcionId: suscripcion[0].id, estado: status },
+    detalle: { suscripcionId: suscripcionActual.id, estado: status, nuevoEstado: status === 'APPROVED' ? 'active' : estadoSuscripcion },
   });
 }
 
