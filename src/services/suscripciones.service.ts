@@ -274,7 +274,16 @@ export class SuscripcionesService extends BaseService {
             );
 
             wompiTransactionId = subscriptionResult.transactionId;
-            
+
+            Logger.info('Resultado de transacción Wompi recibido', {
+              categoria: this.logCategory,
+              detalle: {
+                transactionId: subscriptionResult.transactionId,
+                status: subscriptionResult.status,
+                restauranteId: crearSuscripcionDto.restauranteId,
+              },
+            });
+
             // Mapear estado de Wompi a nuestro estado
             // APPROVED, DECLINED, VOIDED, ERROR, PENDING
             if (subscriptionResult.status === 'APPROVED') {
@@ -292,26 +301,8 @@ export class SuscripcionesService extends BaseService {
             finPeriodoDate.setMonth(finPeriodoDate.getMonth() + (isAnnual ? 12 : 1));
             finPeriodo = finPeriodoDate.toISOString().replace('T', ' ').slice(0, 23);
 
-            // Registrar pago en BD
-            if (subscriptionResult.status === 'APPROVED') {
-              const planPrice = getWompiPlanPrice(crearSuscripcionDto.tipoPlan, isAnnual);
-              await AppDataSource.query(
-                `INSERT INTO pagos (
-                  suscripcion_id, restaurante_id, monto, moneda,
-                  stripe_payment_intent_id, estado, fecha_pago, fecha_creacion
-                )
-                VALUES (@0, @1, @2, @3, @4, 'exitoso', @5, @6)`,
-                [
-                  null, // Se actualizará después de crear la suscripción
-                  crearSuscripcionDto.restauranteId,
-                  planPrice / 100, // Convertir de centavos a pesos
-                  'COP',
-                  wompiTransactionId, // Usamos stripe_payment_intent_id para almacenar el ID de Wompi
-                  fechaActual,
-                  fechaActual,
-                ]
-              );
-            }
+            // Nota: El pago se registrará después de crear/actualizar la suscripción
+            // para tener el suscripcion_id correcto
           } else {
             // Procesar pago con Stripe (código original)
             try {
@@ -569,15 +560,48 @@ export class SuscripcionesService extends BaseService {
       }
     }
 
-    // Actualizar el pago con el suscripcion_id si es Wompi
-    if (paymentProvider === 'wompi' && wompiTransactionId && suscripcionCreada) {
+    // Registrar el pago de Wompi si fue exitoso
+    if (paymentProvider === 'wompi' && wompiTransactionId && suscripcionCreada && estado === 'active') {
       try {
-        await AppDataSource.query(
-          `UPDATE pagos SET suscripcion_id = @0 WHERE stripe_payment_intent_id = @1`,
-          [suscripcionCreada.id, wompiTransactionId]
+        const isAnnual = crearSuscripcionDto.isAnnual || false;
+        const planPrice = getWompiPlanPrice(crearSuscripcionDto.tipoPlan as 'pro' | 'premium', isAnnual);
+
+        // Verificar si el pago ya existe (para evitar duplicados)
+        const pagoExistente = await AppDataSource.query(
+          `SELECT id FROM pagos WHERE stripe_payment_intent_id = @0`,
+          [wompiTransactionId]
         );
+
+        if (!pagoExistente || pagoExistente.length === 0) {
+          // Crear registro de pago para Wompi
+          await AppDataSource.query(
+            `INSERT INTO pagos (
+              suscripcion_id, restaurante_id, monto, moneda,
+              stripe_payment_intent_id, estado, fecha_pago, fecha_creacion
+            )
+            VALUES (@0, @1, @2, @3, @4, 'exitoso', @5, @6)`,
+            [
+              suscripcionCreada.id,
+              crearSuscripcionDto.restauranteId,
+              planPrice, // Precio en pesos colombianos (ya está en pesos, no en centavos)
+              'COP',
+              wompiTransactionId,
+              fechaActual,
+              fechaActual,
+            ]
+          );
+
+          Logger.info('Pago de Wompi registrado exitosamente', {
+            categoria: this.logCategory,
+            detalle: {
+              suscripcionId: suscripcionCreada.id,
+              monto: planPrice,
+              transactionId: wompiTransactionId,
+            },
+          });
+        }
       } catch (error: any) {
-        Logger.warn('Error al actualizar suscripcion_id en pago de Wompi', {
+        Logger.warn('Error al registrar pago de Wompi (se registrará vía webhook)', {
           categoria: this.logCategory,
           detalle: { error: error instanceof Error ? error.message : String(error) },
         });
