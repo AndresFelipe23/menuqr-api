@@ -236,20 +236,25 @@ export class WompiService extends BaseService {
         throw new Error('El monto debe ser mayor a 0');
       }
 
-      // Construir el body según la documentación oficial de Wompi
-      // https://docs.wompi.co/en/docs/colombia/fuentes-de-pago/
-      const requestBody: any = {
-        acceptance_token: acceptanceToken,
-        amount_in_cents: amountInCents,
-        currency: 'COP',
-        customer_email: customerEmail,
-        reference: reference,
-        payment_method: {
-          type: 'CARD',
-          token: tokenId,
-          // NO incluir installments según la documentación oficial
-        },
-      };
+       // Validar que el tokenId sea un string válido
+       if (typeof tokenId !== 'string' || !tokenId.trim()) {
+         throw new Error('Token de tarjeta inválido. Debe ser un string no vacío.');
+       }
+
+       // Construir el body según la documentación oficial de Wompi
+       // https://docs.wompi.co/docs/colombia/referencia-api/
+       // El payment_method debe ser un objeto simple con type y token
+       const requestBody: any = {
+         acceptance_token: acceptanceToken,
+         amount_in_cents: amountInCents,
+         currency: 'COP',
+         customer_email: customerEmail,
+         reference: reference,
+         payment_method: {
+           type: 'CARD',
+           token: tokenId.trim(), // Asegurar que sea string sin espacios
+         },
+       };
 
       // Agregar customer_data solo si tenemos teléfono (opcional según Wompi)
       if (customerPhone) {
@@ -259,17 +264,26 @@ export class WompiService extends BaseService {
         };
       }
 
-      Logger.info('Creando transacción en Wompi', {
-        categoria: this.logCategory,
-        detalle: {
-          amount_in_cents: amountInCents,
-          reference: reference,
-          hasToken: !!tokenId,
-          hasAcceptanceToken: !!acceptanceToken,
-          hasPhone: !!customerPhone,
-          requestBody: JSON.stringify(requestBody), // Log completo del request
-        },
-      });
+       Logger.info('Creando transacción en Wompi', {
+         categoria: this.logCategory,
+         detalle: {
+           amount_in_cents: amountInCents,
+           reference: reference,
+           hasToken: !!tokenId,
+           tokenType: typeof tokenId,
+           tokenLength: tokenId?.length || 0,
+           hasAcceptanceToken: !!acceptanceToken,
+           hasPhone: !!customerPhone,
+           paymentMethodType: requestBody.payment_method?.type,
+           paymentMethodToken: requestBody.payment_method?.token?.substring(0, 20) + '...', // Solo primeros caracteres por seguridad
+         },
+       });
+       
+       // Validar que el requestBody esté correctamente formateado
+       const requestBodyString = JSON.stringify(requestBody);
+       if (!requestBodyString || requestBodyString.includes('[object Object]')) {
+         throw new Error('Error al construir el body de la petición. El payment_method no está correctamente formateado.');
+       }
 
       const response = await fetch(`${this.apiUrl}/transactions`, {
         method: 'POST',

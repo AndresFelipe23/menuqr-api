@@ -179,7 +179,7 @@ export class SuscripcionesService extends BaseService {
             
             // El paymentMethodId puede venir como JSON stringificado con los datos de la tarjeta
             // o como un token ya creado
-            let tokenId = crearSuscripcionDto.paymentMethodId;
+            let tokenId: string = '';
             
             try {
               // Intentar parsear como JSON (si viene del frontend con datos de tarjeta)
@@ -187,10 +187,40 @@ export class SuscripcionesService extends BaseService {
               if (parsedData && parsedData.type === 'wompi' && parsedData.cardData) {
                 // Crear token en Wompi con los datos de la tarjeta
                 tokenId = await wompiService.createToken(JSON.stringify(parsedData.cardData));
+              } else {
+                // Si es un objeto pero no tiene la estructura esperada, usar el paymentMethodId original
+                tokenId = typeof crearSuscripcionDto.paymentMethodId === 'string' 
+                  ? crearSuscripcionDto.paymentMethodId 
+                  : String(crearSuscripcionDto.paymentMethodId);
               }
             } catch (e) {
-              // Si no es JSON, asumir que ya es un token
-              // tokenId ya está configurado
+              // Si no es JSON, asumir que ya es un token string
+              if (typeof crearSuscripcionDto.paymentMethodId === 'string') {
+                tokenId = crearSuscripcionDto.paymentMethodId;
+              } else {
+                // Si es un objeto, intentar convertirlo a string (no debería pasar, pero por seguridad)
+                Logger.warn('paymentMethodId no es un string, intentando convertir', {
+                  categoria: this.logCategory,
+                  detalle: { 
+                    type: typeof crearSuscripcionDto.paymentMethodId,
+                    value: String(crearSuscripcionDto.paymentMethodId).substring(0, 50)
+                  },
+                });
+                tokenId = String(crearSuscripcionDto.paymentMethodId);
+              }
+            }
+            
+            // Validar que tokenId sea un string válido y no vacío
+            if (!tokenId || typeof tokenId !== 'string' || !tokenId.trim()) {
+              Logger.error('Token inválido después del procesamiento', new Error('Token inválido'), {
+                categoria: this.logCategory,
+                detalle: {
+                  originalPaymentMethodId: typeof crearSuscripcionDto.paymentMethodId,
+                  tokenId: typeof tokenId,
+                  tokenIdLength: tokenId?.length || 0,
+                },
+              });
+              this.handleError('Error: Token de tarjeta inválido. Por favor, intenta nuevamente.', null, 400);
             }
             
             const subscriptionResult = await wompiService.createSubscription(
