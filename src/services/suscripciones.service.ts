@@ -284,12 +284,56 @@ export class SuscripcionesService extends BaseService {
               },
             });
 
+            // Si la transacción está PENDING, intentar verificarla una vez más
+            // En ambiente de pruebas de Wompi, las transacciones pueden quedar PENDING
+            // y luego cambiar a APPROVED después de unos segundos
+            if (subscriptionResult.status === 'PENDING') {
+              Logger.info('Transacción Wompi en PENDING, esperando 3 segundos para verificar...', {
+                categoria: this.logCategory,
+                detalle: { transactionId: subscriptionResult.transactionId },
+              });
+
+              // Esperar 3 segundos
+              await new Promise(resolve => setTimeout(resolve, 3000));
+
+              // Verificar el estado de la transacción
+              try {
+                const verificationResult = await wompiService.verifyTransaction(subscriptionResult.transactionId);
+
+                Logger.info('Verificación de transacción Wompi completada', {
+                  categoria: this.logCategory,
+                  detalle: {
+                    transactionId: subscriptionResult.transactionId,
+                    statusOriginal: subscriptionResult.status,
+                    statusVerificado: verificationResult.data.status,
+                  },
+                });
+
+                // Actualizar el status con el resultado de la verificación
+                subscriptionResult.status = verificationResult.data.status;
+              } catch (verifyError: any) {
+                Logger.warn('No se pudo verificar la transacción Wompi, continuando con PENDING', {
+                  categoria: this.logCategory,
+                  detalle: { error: verifyError.message },
+                });
+              }
+            }
+
             // Mapear estado de Wompi a nuestro estado
             // APPROVED, DECLINED, VOIDED, ERROR, PENDING
             if (subscriptionResult.status === 'APPROVED') {
               estado = 'active';
             } else if (subscriptionResult.status === 'PENDING') {
+              // La transacción sigue PENDING, se activará cuando el webhook notifique
               estado = 'incomplete';
+
+              Logger.warn('Transacción Wompi quedó en PENDING. La suscripción se activará cuando Wompi notifique la aprobación vía webhook.', {
+                categoria: this.logCategory,
+                detalle: {
+                  transactionId: subscriptionResult.transactionId,
+                  restauranteId: crearSuscripcionDto.restauranteId,
+                },
+              });
             } else {
               this.handleError(`Pago rechazado en Wompi: ${subscriptionResult.status}`, null, 400);
             }
