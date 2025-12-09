@@ -299,15 +299,39 @@ export class WompiService extends BaseService {
          throw new Error('Token inválido. El token debe ser generado por Wompi, no un objeto JSON.');
        }
 
+       // Generar firma de integridad (signature) requerida por Wompi
+       // https://docs.wompi.co/en/docs/colombia/widget-checkout-web/
+       // Formato: reference + amount_in_cents + currency + integrity_secret
+       const currency = 'COP';
+       const signatureData = `${reference}${amountInCents}${currency}${this.config.integritySecret}`;
+       const signature = crypto
+         .createHash('sha256')
+         .update(signatureData)
+         .digest('hex');
+
+       Logger.info('Firma de integridad generada para transacción Wompi', {
+         categoria: this.logCategory,
+         detalle: {
+           reference: reference,
+           amount_in_cents: amountInCents,
+           currency: currency,
+           hasIntegritySecret: !!this.config.integritySecret,
+           integritySecretLength: this.config.integritySecret?.length || 0,
+           signatureLength: signature.length,
+           signaturePrefix: signature.substring(0, 10),
+         },
+       });
+
        // Construir el body según la documentación oficial de Wompi
        // https://docs.wompi.co/docs/colombia/referencia-api/
        // El payment_method debe incluir type, token e installments
        const requestBody: any = {
          acceptance_token: acceptanceToken,
          amount_in_cents: amountInCents,
-         currency: 'COP',
+         currency: currency,
          customer_email: customerEmail,
          reference: reference,
+         signature: signature, // Firma de integridad requerida
          payment_method: {
            type: 'CARD',
            token: tokenId.trim(), // Asegurar que sea string sin espacios
