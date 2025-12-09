@@ -89,9 +89,13 @@ export class SuscripcionesService extends BaseService {
       this.handleError('El restaurante debe tener un email válido para procesar pagos', null, 400);
     }
 
-    // Validar que el restaurante tiene teléfono (requerido por Wompi para transacciones con tarjeta)
+    // Validar que el restaurante tiene teléfono (recomendado pero no obligatorio)
+    // Si no tiene teléfono, solo loguear advertencia
     if (crearSuscripcionDto.tipoPlan !== 'free' && (!restaurante[0].telefono || restaurante[0].telefono.length < 10)) {
-      this.handleError('El restaurante debe tener un teléfono válido (mínimo 10 dígitos) para procesar pagos con Wompi', null, 400);
+      Logger.warn('El restaurante no tiene un teléfono válido configurado', {
+        categoria: this.logCategory,
+        detalle: { restauranteId: crearSuscripcionDto.restauranteId },
+      });
     }
 
     // Verificar si ya existe una suscripción activa

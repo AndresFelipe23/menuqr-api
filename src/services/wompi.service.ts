@@ -236,30 +236,28 @@ export class WompiService extends BaseService {
         throw new Error('El monto debe ser mayor a 0');
       }
 
-      // Construir customer_data según la documentación de Wompi
-      const customerData: any = {
-        email: customerEmail,
-        full_name: customerName || 'Cliente',
-      };
-
-      // Agregar teléfono si está disponible (requerido por Wompi para transacciones con tarjeta)
-      if (customerPhone) {
-        customerData.phone_number = customerPhone;
-      }
-
-      const requestBody = {
+      // Construir el body según la documentación oficial de Wompi
+      // https://docs.wompi.co/en/docs/colombia/fuentes-de-pago/
+      const requestBody: any = {
+        acceptance_token: acceptanceToken,
         amount_in_cents: amountInCents,
         currency: 'COP',
         customer_email: customerEmail,
-        customer_data: customerData,
+        reference: reference,
         payment_method: {
           type: 'CARD',
           token: tokenId,
-          installments: 1,
+          // NO incluir installments según la documentación oficial
         },
-        reference: reference,
-        acceptance_token: acceptanceToken,
       };
+
+      // Agregar customer_data solo si tenemos teléfono (opcional según Wompi)
+      if (customerPhone) {
+        requestBody.customer_data = {
+          phone_number: customerPhone,
+          full_name: customerName || 'Cliente',
+        };
+      }
 
       Logger.info('Creando transacción en Wompi', {
         categoria: this.logCategory,
@@ -269,6 +267,7 @@ export class WompiService extends BaseService {
           hasToken: !!tokenId,
           hasAcceptanceToken: !!acceptanceToken,
           hasPhone: !!customerPhone,
+          requestBody: JSON.stringify(requestBody), // Log completo del request
         },
       });
 
