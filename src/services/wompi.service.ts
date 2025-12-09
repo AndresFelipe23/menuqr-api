@@ -80,7 +80,19 @@ export class WompiService extends BaseService {
     try {
       // Obtener acceptance_token desde la API de Wompi usando la llave pública
       // Endpoint: GET /merchants/:public_key
-      const response = await fetch(`${this.apiUrl}/merchants/${this.config.publicKey}`, {
+      const merchantUrl = `${this.apiUrl}/merchants/${this.config.publicKey}`;
+      
+      Logger.info('Obteniendo acceptance_token de Wompi', {
+        categoria: this.logCategory,
+        detalle: {
+          environment: this.config.environment,
+          apiUrl: this.apiUrl,
+          merchantUrl: merchantUrl,
+          publicKeyPrefix: this.config.publicKey.substring(0, 15),
+        },
+      });
+      
+      const response = await fetch(merchantUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -112,7 +124,13 @@ export class WompiService extends BaseService {
 
       Logger.info('Acceptance_token obtenido exitosamente desde Wompi', {
         categoria: this.logCategory,
-        detalle: { expiresIn: '1 hora' },
+        detalle: { 
+          expiresIn: '1 hora',
+          environment: this.config.environment,
+          apiUrl: this.apiUrl,
+          publicKeyPrefix: this.config.publicKey.substring(0, 15),
+          acceptanceTokenPrefix: acceptanceToken.substring(0, 30),
+        },
       });
 
       return acceptanceToken;
@@ -141,10 +159,37 @@ export class WompiService extends BaseService {
   async createToken(cardDataJson: string): Promise<string> {
     try {
       // Parsear datos de la tarjeta
-      const cardData = JSON.parse(cardDataJson);
+      let cardData: any;
+      try {
+        cardData = JSON.parse(cardDataJson);
+      } catch (parseError) {
+        Logger.error('Error al parsear datos de tarjeta', parseError instanceof Error ? parseError : new Error(String(parseError)), {
+          categoria: this.logCategory,
+          detalle: { cardDataJson: cardDataJson.substring(0, 100) },
+        });
+        throw new Error('Formato de datos de tarjeta inválido');
+      }
+      
+      // Validar que los campos requeridos estén presentes
+      if (!cardData.number || !cardData.cvc || !cardData.exp_month || !cardData.exp_year) {
+        throw new Error('Faltan campos requeridos en los datos de la tarjeta');
+      }
       
       // Obtener acceptance_token de Wompi dinámicamente (método recomendado)
       const acceptanceToken = await this.getAcceptanceToken();
+      
+      // Log del ambiente y configuración para debugging
+      Logger.info('Creando token de tarjeta en Wompi', {
+        categoria: this.logCategory,
+        detalle: {
+          environment: this.config.environment,
+          apiUrl: this.apiUrl,
+          publicKeyPrefix: this.config.publicKey.substring(0, 12),
+          privateKeyPrefix: this.config.privateKey.substring(0, 12),
+          hasAcceptanceToken: !!acceptanceToken,
+          cardNumberLast4: cardData.number.toString().slice(-4),
+        },
+      });
       
       // Wompi requiere un acceptance_token para tokenizar tarjetas
       // Ajustar según la documentación oficial de Wompi
