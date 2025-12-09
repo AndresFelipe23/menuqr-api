@@ -86,7 +86,7 @@ export class SuscripcionesService extends BaseService {
 
     // Validar que el restaurante tiene email (requerido para Wompi)
     if (!restaurante[0].correo || !restaurante[0].correo.includes('@')) {
-      this.handleError('El restaurante debe tener un email válido para procesar pagos', null, 400);
+      this.handleError('Para procesar el pago, necesitas tener un correo electrónico válido configurado en tu perfil', null, 400);
     }
 
     // Validar que el restaurante tiene teléfono (recomendado pero no obligatorio)
@@ -208,7 +208,7 @@ export class SuscripcionesService extends BaseService {
                       error: tokenError.message,
                     },
                   });
-                  this.handleError(`Error al procesar la tarjeta: ${tokenError.message || 'Verifica que la tarjeta sea válida'}`, null, 400);
+                  this.handleError('No pudimos procesar tu tarjeta. Por favor, verifica que los datos sean correctos e intenta nuevamente', null, 400);
                 }
               } else {
                 // Si es un objeto pero no tiene la estructura esperada, rechazar
@@ -335,7 +335,7 @@ export class SuscripcionesService extends BaseService {
                 },
               });
             } else {
-              this.handleError(`Pago rechazado en Wompi: ${subscriptionResult.status}`, null, 400);
+              this.handleError('Tu pago no pudo ser procesado. Por favor, verifica los datos de tu tarjeta e intenta nuevamente', null, 400);
             }
 
             // Calcular fechas de período
@@ -444,7 +444,7 @@ export class SuscripcionesService extends BaseService {
                 categoria: this.logCategory,
                 restauranteId: crearSuscripcionDto.restauranteId,
               });
-              this.handleError(`Error al procesar el pago: ${error.message}`, error, 500);
+              this.handleError('Ocurrió un error al procesar tu pago. Por favor, intenta nuevamente o contacta a soporte', error, 500);
             }
           }
         } catch (error: any) {

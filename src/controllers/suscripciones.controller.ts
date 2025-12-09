@@ -174,27 +174,27 @@ export class SuscripcionesController extends BaseController {
         );
       }
 
-      // Construir la URL del payment link con parámetros
-      const url = new URL(paymentLink);
+      // IMPORTANTE: Los payment links de Wompi NO deben modificarse con parámetros adicionales
+      // Agregar parámetros como redirect_url o reference puede causar que el link no funcione
+      // El redirect_url debe configurarse directamente en el panel de Wompi para cada payment link
+      // La referencia se puede identificar usando el restauranteId y suscripcionId en el webhook
       
-      // Agregar referencia única para identificar la transacción en el webhook
-      // Wompi puede incluir esta referencia en el webhook
-      url.searchParams.append('reference', reference);
-      
-      // URL de callback después del pago (redirección después de completar el pago)
-      // Wompi permite configurar redirect_url en los payment links
+      // URL de callback esperada (solo para referencia en logs)
       const frontendAdminUrl = process.env.FRONTEND_ADMIN_URL || 
         (process.env.NODE_ENV === 'production' 
-          ? 'https://admin.menusqr.site' 
+          ? 'https://qrestaurante.site' 
           : 'http://localhost:3000');
       
-      // URL de callback después del pago exitoso
-      const callbackUrl = `${frontendAdminUrl}/dashboard/planes?wompi_callback=true&reference=${encodeURIComponent(reference)}&plan=${plan}&annual=${isAnnual}`;
+      const expectedCallbackUrl = `${frontendAdminUrl}/dashboard/planes?wompi_callback=true&reference=${encodeURIComponent(reference)}&plan=${plan}&annual=${isAnnual}`;
       
-      // Agregar redirectUrl como parámetro (Wompi puede soportar esto según configuración)
-      // Nota: Algunos payment links de Wompi tienen el redirectUrl pre-configurado
-      // Si el link ya tiene redirectUrl, estos parámetros lo sobrescribirán o se agregarán
-      url.searchParams.append('redirect_url', callbackUrl);
+      Logger.info('Nota importante: El redirect_url debe configurarse en el panel de Wompi', {
+        categoria: LogCategory.NEGOCIO,
+        detalle: {
+          expectedCallbackUrl: expectedCallbackUrl,
+          reference: reference,
+          suscripcionId: suscripcion.id,
+        },
+      });
 
       Logger.info('Link de pago Wompi generado', {
         categoria: LogCategory.NEGOCIO,
@@ -203,14 +203,16 @@ export class SuscripcionesController extends BaseController {
           plan, 
           isAnnual, 
           reference,
-          suscripcionId: suscripcion.id 
+          suscripcionId: suscripcion.id,
+          paymentLink: paymentLink.substring(0, 80) + '...', // Solo primeros caracteres por seguridad
+          note: 'El payment link se devuelve sin modificar. El redirect_url debe configurarse en el panel de Wompi.',
         },
       });
 
       return this.responseUtil.success(
         res,
         { 
-          paymentLink: url.toString(),
+          paymentLink: paymentLink, // Usar el link original sin modificar
           reference,
           suscripcionId: suscripcion.id 
         },
