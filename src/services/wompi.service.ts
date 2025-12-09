@@ -191,12 +191,13 @@ export class WompiService extends BaseService {
         },
       });
       
-      // Wompi requiere un acceptance_token para tokenizar tarjetas
-      // Ajustar según la documentación oficial de Wompi
+      // Wompi requiere la llave PÚBLICA para tokenizar tarjetas (no la privada)
+      // La llave privada solo se usa para crear transacciones
+      // https://docs.wompi.co/docs/colombia/fuentes-de-pago/
       const response = await fetch(`${this.apiUrl}/tokens/cards`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.config.privateKey}`,
+          'Authorization': `Bearer ${this.config.publicKey}`, // Usar llave PÚBLICA, no privada
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -205,7 +206,6 @@ export class WompiService extends BaseService {
           exp_month: cardData.exp_month,
           exp_year: cardData.exp_year,
           card_holder: cardData.card_holder,
-          acceptance_token: acceptanceToken,
         }),
       });
 
