@@ -815,15 +815,92 @@ export class SuscripcionesService extends BaseService {
   /**
    * Verifica los límites de un plan
    */
-  async verificarLimites(restauranteId: string, tipo: 'items' | 'mesas' | 'usuarios'): Promise<{ permitido: boolean; limite: number; actual: number }> {
-    const suscripcion = await this.obtenerPorRestauranteId(restauranteId);
+  async verificarLimites(restauranteId: string, tipo: 'items' | 'mesas' | 'usuarios' | 'categorias'): Promise<{ permitido: boolean; limite: number; actual: number }> {
+    try {
+      let suscripcion: Suscripcion | null = null;
+      try {
+        suscripcion = await this.obtenerPorRestauranteId(restauranteId);
+      } catch (error: any) {
+        // Si obtenerPorRestauranteId falla, loguear pero continuar como si no hubiera suscripción (plan FREE)
+        this.logger.warn('Error al obtener suscripción en verificarLimites', {
+          categoria: this.logCategory,
+          restauranteId,
+          detalle: { tipo, errorMessage: error?.message, error: error instanceof Error ? error.message : String(error) },
+        });
+        suscripcion = null;
+      }
+      
+      // Si no hay suscripción, asumir plan FREE (límites más restrictivos)
+      if (!suscripcion) {
+        this.logger.warn('No se encontró suscripción, asumiendo plan FREE', {
+          categoria: this.logCategory,
+          restauranteId,
+          detalle: { tipo },
+        });
+        // Usar límites de plan FREE
+        const planFree = SUBSCRIPTION_PLANS.free;
+        const limitKey = tipo === 'categorias' ? 'maxCategorias' : `max${tipo.charAt(0).toUpperCase() + tipo.slice(1)}`;
+        const limite = planFree.limits[limitKey as keyof typeof planFree.limits] as number;
+        
+        // Contar elementos actuales
+        let actual = 0;
+        if (tipo === 'items') {
+          const resultado = await AppDataSource.query(
+            `SELECT COUNT(*) as total FROM items_menu WHERE restaurante_id = @0 AND fecha_eliminacion IS NULL`,
+            [restauranteId]
+          );
+          actual = parseInt(resultado[0]?.total || 0, 10);
+        } else if (tipo === 'mesas') {
+          const resultado = await AppDataSource.query(
+            `SELECT COUNT(*) as total FROM mesas WHERE restaurante_id = @0`,
+            [restauranteId]
+          );
+          actual = parseInt(resultado[0]?.total || 0, 10);
+        } else if (tipo === 'usuarios') {
+          const resultado = await AppDataSource.query(
+            `SELECT COUNT(*) as total FROM usuarios WHERE restaurante_id = @0 AND activo = 1 AND fecha_eliminacion IS NULL`,
+            [restauranteId]
+          );
+          actual = parseInt(resultado[0]?.total || 0, 10);
+        } else if (tipo === 'categorias') {
+          const resultado = await AppDataSource.query(
+            `SELECT COUNT(*) as total FROM categorias WHERE restaurante_id = @0`,
+            [restauranteId]
+          );
+          actual = parseInt(resultado[0]?.total || 0, 10);
+        }
+        
+        const permitido = actual < limite;
+        return { permitido, limite, actual };
+      }
+
+    // Normalizar el tipo de plan a lowercase para asegurar coincidencia
+    const tipoPlanNormalizado = suscripcion.tipoPlan?.toLowerCase() as keyof typeof SUBSCRIPTION_PLANS;
+    const plan = SUBSCRIPTION_PLANS[tipoPlanNormalizado];
     
-    if (!suscripcion) {
+    if (!plan) {
+      this.logger.error('Plan no encontrado en SUBSCRIPTION_PLANS', new Error(`Plan ${suscripcion.tipoPlan} no encontrado`), {
+        categoria: this.logCategory,
+        restauranteId,
+        detalle: { tipoPlan: suscripcion.tipoPlan, tipoPlanNormalizado, planesDisponibles: Object.keys(SUBSCRIPTION_PLANS) },
+      });
+      // Si no se encuentra el plan, bloquear por seguridad (asumir plan FREE)
       return { permitido: false, limite: 0, actual: 0 };
     }
+    
+    // Mapear 'categorias' a 'maxCategorias' en los límites
+    const limitKey = tipo === 'categorias' ? 'maxCategorias' : `max${tipo.charAt(0).toUpperCase() + tipo.slice(1)}`;
+    const limite = plan.limits[limitKey as keyof typeof plan.limits] as number;
 
-    const plan = SUBSCRIPTION_PLANS[suscripcion.tipoPlan];
-    const limite = plan.limits[`max${tipo.charAt(0).toUpperCase() + tipo.slice(1)}` as keyof typeof plan.limits] as number;
+    if (limite === undefined || limite === null) {
+      this.logger.error('Límite no encontrado en plan', new Error(`Límite ${limitKey} no encontrado en plan ${suscripcion.tipoPlan}`), {
+        categoria: this.logCategory,
+        restauranteId,
+        detalle: { tipoPlan: suscripcion.tipoPlan, limitKey, limits: plan.limits },
+      });
+      // Si no se encuentra el límite, bloquear por seguridad
+      return { permitido: false, limite: 0, actual: 0 };
+    }
 
     // Si el límite es -1, es ilimitado
     if (limite === -1) {
@@ -837,26 +914,72 @@ export class SuscripcionesService extends BaseService {
         `SELECT COUNT(*) as total FROM items_menu WHERE restaurante_id = @0 AND fecha_eliminacion IS NULL`,
         [restauranteId]
       );
-      actual = resultado[0]?.total || 0;
+      actual = parseInt(resultado[0]?.total || 0, 10);
     } else if (tipo === 'mesas') {
       const resultado = await AppDataSource.query(
         `SELECT COUNT(*) as total FROM mesas WHERE restaurante_id = @0`,
         [restauranteId]
       );
-      actual = resultado[0]?.total || 0;
+      actual = parseInt(resultado[0]?.total || 0, 10);
     } else if (tipo === 'usuarios') {
       const resultado = await AppDataSource.query(
         `SELECT COUNT(*) as total FROM usuarios WHERE restaurante_id = @0 AND activo = 1 AND fecha_eliminacion IS NULL`,
         [restauranteId]
       );
-      actual = resultado[0]?.total || 0;
+      actual = parseInt(resultado[0]?.total || 0, 10);
+    } else if (tipo === 'categorias') {
+      const resultado = await AppDataSource.query(
+        `SELECT COUNT(*) as total FROM categorias WHERE restaurante_id = @0`,
+        [restauranteId]
+      );
+      actual = parseInt(resultado[0]?.total || 0, 10);
     }
 
-    return {
-      permitido: actual < limite,
-      limite,
-      actual,
-    };
+    // La verificación debe ser: si actual >= limite, entonces NO permitido
+    // Es decir, permitido = actual < limite
+    // Ejemplo: si tiene 3 categorías y límite es 3, entonces 3 < 3 = false (no permitido) ✓
+    const permitido = actual < limite;
+
+    this.logger.info('Verificación de límites completada', {
+      categoria: this.logCategory,
+      restauranteId,
+      detalle: {
+        tipo,
+        tipoPlan: suscripcion.tipoPlan,
+        tipoPlanNormalizado,
+        actual,
+        limite,
+        permitido,
+        limitKey,
+      },
+    });
+
+      return {
+        permitido,
+        limite,
+        actual,
+      };
+    } catch (error: any) {
+      this.logger.error('Error en verificarLimites', error instanceof Error ? error : new Error(String(error)), {
+        categoria: this.logCategory,
+        restauranteId,
+        detalle: {
+          tipo,
+          errorMessage: error.message,
+          errorStack: error.stack,
+        },
+      });
+      // En caso de error, asumir plan FREE (más restrictivo) por seguridad
+      try {
+        const planFree = SUBSCRIPTION_PLANS.free;
+        const limitKey = tipo === 'categorias' ? 'maxCategorias' : `max${tipo.charAt(0).toUpperCase() + tipo.slice(1)}`;
+        const limite = planFree.limits[limitKey as keyof typeof planFree.limits] as number || 0;
+        return { permitido: false, limite, actual: 0 };
+      } catch (fallbackError) {
+        // Si incluso el fallback falla, retornar valores seguros
+        return { permitido: false, limite: 0, actual: 0 };
+      }
+    }
   }
 }
 

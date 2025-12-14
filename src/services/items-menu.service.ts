@@ -3,6 +3,7 @@ import { BaseService } from './base.service';
 import { LogCategory } from '../utils/logger';
 import { CrearItemMenuDto, ActualizarItemMenuDto, QueryItemMenuDto } from '../dto';
 import { getMonteriaLocalDate } from '../utils/date.utils';
+import { SuscripcionesService } from './suscripciones.service';
 
 export interface ItemMenu {
   id: string;
@@ -357,7 +358,6 @@ export class ItemsMenuService extends BaseService {
 
     // Verificar límites de suscripción
     try {
-      const { SuscripcionesService } = await import('./suscripciones.service');
       const suscripcionesService = new SuscripcionesService();
       const limites = await suscripcionesService.verificarLimites(crearItemMenuDto.restauranteId, 'items');
       

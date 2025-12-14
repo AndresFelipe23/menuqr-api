@@ -5,6 +5,7 @@ import { CrearMesaDto, ActualizarMesaDto, QueryMesaDto } from '../dto';
 import { getMonteriaLocalDate } from '../utils/date.utils';
 import { webSocketService } from './websocket.service';
 import { StorageService } from './storage.service';
+import { SuscripcionesService } from './suscripciones.service';
 import QRCode from 'qrcode';
 
 export interface Mesa {
@@ -293,7 +294,6 @@ export class MesasService extends BaseService {
 
     // Verificar límites de suscripción
     try {
-      const { SuscripcionesService } = await import('./suscripciones.service');
       const suscripcionesService = new SuscripcionesService();
       const limites = await suscripcionesService.verificarLimites(crearMesaDto.restauranteId, 'mesas');
       

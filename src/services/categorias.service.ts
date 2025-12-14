@@ -3,6 +3,8 @@ import { BaseService } from './base.service';
 import { LogCategory } from '../utils/logger';
 import { CrearCategoriaDto, ActualizarCategoriaDto, QueryCategoriaDto } from '../dto';
 import { getMonteriaLocalDate } from '../utils/date.utils';
+import { SuscripcionesService } from './suscripciones.service';
+import { AppError } from '../middlewares/errorHandler';
 
 export interface Categoria {
   id: string;
@@ -190,6 +192,77 @@ export class CategoriasService extends BaseService {
 
     if (!restaurante || restaurante.length === 0) {
       this.handleError('Restaurante no encontrado', null, 404);
+    }
+
+    // Verificar límites de suscripción
+    try {
+      const suscripcionesService = new SuscripcionesService();
+      const limites = await suscripcionesService.verificarLimites(crearCategoriaDto.restauranteId, 'categorias');
+      
+      this.logger.info('Verificación de límites de categorías', {
+        categoria: this.logCategory,
+        restauranteId: crearCategoriaDto.restauranteId,
+        detalle: { 
+          permitido: limites.permitido, 
+          actual: limites.actual, 
+          limite: limites.limite 
+        },
+      });
+      
+      if (!limites.permitido) {
+        const mensaje = limites.limite === -1 
+          ? 'No se puede crear más categorías. Por favor, actualiza tu plan para obtener límites ilimitados.'
+          : `Has alcanzado el límite de ${limites.limite} categorías de tu plan actual (${limites.actual}/${limites.limite}). ` +
+            'Por favor, actualiza tu plan para crear más categorías.';
+        this.handleError(mensaje, null, 403);
+      }
+    } catch (error: any) {
+      // Si el error es un AppError (excepción esperada por límite alcanzado), dejar que se propague
+      if (error instanceof AppError) {
+        throw error; // Re-lanzar para que se maneje correctamente
+      }
+      
+      // Si es un error inesperado (BD, red, etc.), hacer fallback
+      this.logger.error('Error inesperado al verificar límites de suscripción - usando límites de plan FREE por defecto', error instanceof Error ? error : new Error(String(error)), {
+        categoria: this.logCategory,
+        restauranteId: crearCategoriaDto.restauranteId,
+        detalle: { 
+          errorMessage: error?.message, 
+          errorStack: error?.stack,
+          errorName: error?.name,
+        },
+      });
+      
+      // Si hay error inesperado, aplicar límites de plan FREE por seguridad
+      // Contar categorías actuales directamente
+      try {
+        const resultado = await AppDataSource.query(
+          `SELECT COUNT(*) as total FROM categorias WHERE restaurante_id = @0`,
+          [crearCategoriaDto.restauranteId]
+        );
+        const actual = parseInt(resultado[0]?.total || 0, 10);
+        const limiteFree = 3; // Límite del plan FREE
+        
+        if (actual >= limiteFree) {
+          this.handleError(
+            `Has alcanzado el límite de ${limiteFree} categorías de tu plan actual (${actual}/${limiteFree}). Por favor, actualiza tu plan para crear más categorías.`,
+            null,
+            403
+          );
+        }
+        // Si no alcanzó el límite, continuar con la creación
+      } catch (countError: any) {
+        // Si incluso contar falla, bloquear por seguridad
+        this.logger.error('Error crítico al contar categorías - BLOQUEANDO', countError instanceof Error ? countError : new Error(String(countError)), {
+          categoria: this.logCategory,
+          restauranteId: crearCategoriaDto.restauranteId,
+        });
+        this.handleError(
+          'Error al verificar los límites de tu plan. Por favor, intenta de nuevo o contacta al soporte si el problema persiste.',
+          null,
+          500
+        );
+      }
     }
 
     // Si no se especifica orden, obtener el siguiente orden disponible

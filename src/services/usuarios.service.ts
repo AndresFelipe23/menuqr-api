@@ -4,6 +4,7 @@ import { BaseService } from './base.service';
 import { LogCategory } from '../utils/logger';
 import { CrearUsuarioDto, ActualizarUsuarioDto, QueryUsuarioDto } from '../dto';
 import { getMonteriaLocalDate } from '../utils/date.utils';
+import { SuscripcionesService } from './suscripciones.service';
 
 export interface Usuario {
   id: string;
@@ -261,6 +262,27 @@ export class UsuariosService extends BaseService {
 
       if (!restaurante || restaurante.length === 0) {
         this.handleError('Restaurante no encontrado', null, 404);
+      }
+
+      // Verificar límites de suscripción (solo para usuarios con restaurante)
+      try {
+        const suscripcionesService = new SuscripcionesService();
+        const limites = await suscripcionesService.verificarLimites(crearUsuarioDto.restauranteId, 'usuarios');
+        
+        if (!limites.permitido) {
+          const mensaje = limites.limite === -1 
+            ? 'No se puede crear más usuarios. Por favor, actualiza tu plan para obtener límites ilimitados.'
+            : `Has alcanzado el límite de ${limites.limite} usuario(s) de tu plan actual (${limites.actual}/${limites.limite}). ` +
+              'Por favor, actualiza tu plan para crear más usuarios.';
+          this.handleError(mensaje, null, 403);
+        }
+      } catch (error: any) {
+        // Si hay error al verificar límites, continuar (no bloquear)
+        this.logger.warn('Error al verificar límites de suscripción', {
+          categoria: this.logCategory,
+          restauranteId: crearUsuarioDto.restauranteId,
+          detalle: { error: error.message },
+        });
       }
     }
 
