@@ -83,12 +83,12 @@ export function getWompiApiUrl(): string {
  */
 export const WOMPI_PLAN_PRICES = {
   pro: {
-    monthly: 36000, // $9 USD * 4000 COP
-    annual: 360000, // $90 USD * 4000 COP
+    monthly: 20000, // $20,000 COP mensual
+    annual: 200000, // Mantener por compatibilidad, pero no se usa
   },
   premium: {
-    monthly: 56000, // $14 USD * 4000 COP
-    annual: 560000, // $140 USD * 4000 COP
+    monthly: 35000, // $35,000 COP mensual
+    annual: 350000, // Mantener por compatibilidad, pero no se usa
   },
 };
 

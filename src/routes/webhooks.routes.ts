@@ -419,8 +419,8 @@ async function handleWompiTransactionUpdate(transaction: any) {
     const amountInCOP = amountInCents / 100;
     
     // Identificar el plan por el monto usando los precios configurados
-    // PRO mensual: $36,000 COP
-    // PREMIUM mensual: $56,000 COP
+    // PRO mensual: $20,000 COP
+    // PREMIUM mensual: $35,000 COP
     let tipoPlanEsperado: 'pro' | 'premium' | null = null;
     const precioPro = WOMPI_PLAN_PRICES.pro.monthly;
     const precioPremium = WOMPI_PLAN_PRICES.premium.monthly;

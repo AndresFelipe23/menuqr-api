@@ -53,15 +53,24 @@ export class AuthService extends BaseService {
     });
 
     // Buscar usuario por email con permisos
+    // Para SuperAdministrador, preferir roles sin restaurante_id (globales)
+    // Si no hay rol global, usar cualquier rol asociado
     const usuario = await AppDataSource.query(
       `SELECT 
         u.id, u.correo, u.hash_contrasena, u.nombre, u.restaurante_id, u.activo,
-        ru.rol_id,
-        r.nombre as rol_nombre
+        COALESCE(
+          MAX(CASE WHEN ru.restaurante_id IS NULL THEN ru.rol_id END),
+          MAX(ru.rol_id)
+        ) as rol_id,
+        COALESCE(
+          MAX(CASE WHEN ru.restaurante_id IS NULL THEN r.nombre END),
+          MAX(r.nombre)
+        ) as rol_nombre
       FROM usuarios u
       LEFT JOIN roles_usuario ru ON ru.usuario_id = u.id
       LEFT JOIN roles r ON r.id = ru.rol_id
-      WHERE u.correo = @0 AND u.fecha_eliminacion IS NULL`,
+      WHERE u.correo = @0 AND u.fecha_eliminacion IS NULL
+      GROUP BY u.id, u.correo, u.hash_contrasena, u.nombre, u.restaurante_id, u.activo`,
       [loginDto.email]
     );
 
@@ -496,13 +505,18 @@ export class AuthService extends BaseService {
       const decoded = jwt.verify(refreshTokenDto.refreshToken, jwtConfig.refreshSecret) as JwtPayload;
 
       // Buscar usuario
+      // Para SuperAdministrador, preferir roles sin restaurante_id (globales)
       const usuario = await AppDataSource.query(
         `SELECT 
           u.id, u.correo, u.activo, u.restaurante_id,
-          ru.rol_id
+          COALESCE(
+            MAX(CASE WHEN ru.restaurante_id IS NULL THEN ru.rol_id END),
+            MAX(ru.rol_id)
+          ) as rol_id
         FROM usuarios u
         LEFT JOIN roles_usuario ru ON ru.usuario_id = u.id
-        WHERE u.id = @0 AND u.fecha_eliminacion IS NULL`,
+        WHERE u.id = @0 AND u.fecha_eliminacion IS NULL
+        GROUP BY u.id, u.correo, u.activo, u.restaurante_id`,
         [decoded.userId]
       );
 

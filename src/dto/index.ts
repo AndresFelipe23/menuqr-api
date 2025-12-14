@@ -33,4 +33,5 @@ export * from './pedidos/actualizar-pedido.dto';
 export * from './pedidos/query-pedido.dto';
 export * from './suscripciones/crear-suscripcion.dto';
 export * from './suscripciones/actualizar-suscripcion.dto';
+export * from './comentarios';
 

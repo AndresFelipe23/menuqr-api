@@ -29,17 +29,25 @@ export async function authenticate(
     const decoded = jwt.verify(token, jwtConfig.secret) as JwtPayload;
 
     // Buscar usuario en la base de datos
+    // Para SuperAdministrador, preferir roles sin restaurante_id (globales)
     const usuario = await AppDataSource.query(
       `SELECT 
         u.id, u.correo, u.nombre, u.activo, u.restaurante_id,
-        ru.rol_id,
-        r.nombre as rol_nombre,
-        r.nombre as restaurante_nombre
+        COALESCE(
+          MAX(CASE WHEN ru.restaurante_id IS NULL THEN ru.rol_id END),
+          MAX(ru.rol_id)
+        ) as rol_id,
+        COALESCE(
+          MAX(CASE WHEN ru.restaurante_id IS NULL THEN r.nombre END),
+          MAX(r.nombre)
+        ) as rol_nombre,
+        MAX(rest.nombre) as restaurante_nombre
       FROM usuarios u
       LEFT JOIN roles_usuario ru ON ru.usuario_id = u.id
       LEFT JOIN roles r ON r.id = ru.rol_id
       LEFT JOIN restaurantes rest ON rest.id = u.restaurante_id
-      WHERE u.id = @0 AND u.fecha_eliminacion IS NULL`,
+      WHERE u.id = @0 AND u.fecha_eliminacion IS NULL
+      GROUP BY u.id, u.correo, u.nombre, u.activo, u.restaurante_id`,
       [decoded.userId]
     );
 
