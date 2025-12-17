@@ -27,6 +27,8 @@ import storageRoutes from './routes/storage.routes';
 import suscripcionesRoutes from './routes/suscripciones.routes';
 import webhooksRoutes from './routes/webhooks.routes';
 import comentariosRoutes from './routes/comentarios.routes';
+import reservasRoutes from './routes/reservas.routes';
+import configuracionReservasRoutes from './routes/configuracion-reservas.routes';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -2801,6 +2803,8 @@ app.use('/api/pedidos', pedidosRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/suscripciones', suscripcionesRoutes);
 app.use('/api/comentarios', comentariosRoutes);
+app.use('/api/reservas', reservasRoutes);
+app.use('/api/configuracion-reservas', configuracionReservasRoutes);
 // Nota: webhooks se registra ANTES de express.json() (ver arriba)
 
 // 404 Handler y Error Handler se registrarán después de Scalar (dentro de startServer)
