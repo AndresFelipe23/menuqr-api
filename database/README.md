@@ -43,7 +43,14 @@ Cada restaurante puede personalizar su página pública con:
    - Roles: Super Admin, Admin, Mesero, Cocina
    - Asignación de roles por restaurante
 
-5. **Analytics**
+5. **Reservas de Mesas** (Solo PREMIUM)
+   - Sistema de reservas de mesas
+   - Configuración de horarios y políticas
+   - Confirmación y gestión de reservas
+   - Historial de cambios de estado
+   - Notificaciones y recordatorios
+
+6. **Analytics**
    - Seguimiento de eventos
    - Métricas de uso
    - Estadísticas de pedidos
@@ -72,6 +79,11 @@ Cada restaurante puede personalizar su página pública con:
 - `items_pedido` - Items del pedido
 - `items_pedido_adiciones` - Adiciones seleccionadas
 - `historial_estado_pedido` - Historial de estados
+
+### Reservas (Solo PREMIUM)
+- `configuracion_reservas` - Configuración de reservas por restaurante
+- `reservas` - Reservas de mesas
+- `historial_estado_reserva` - Historial de cambios de estado de reservas
 
 ### Facturación
 - `suscripciones` - Suscripciones
