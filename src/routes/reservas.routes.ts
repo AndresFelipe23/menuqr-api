@@ -14,6 +14,14 @@ const reservasController = new ReservasController();
  */
 router.get('/public/confirmar/:codigo', reservasController.confirmarPorCodigo);
 
+/**
+ * @route POST /api/reservas/public
+ * @description Crea una nueva reserva desde el frontend público (no requiere autenticación)
+ * @access Público
+ * @body { restauranteId: string, mesaId: string, nombreCliente: string, correoCliente: string, telefonoCliente: string, fechaReserva: string, numeroPersonas?: number, notasCliente?: string }
+ */
+router.post('/public', validateDto(CrearReservaDto), reservasController.crearPublica);
+
 // Todas las rutas siguientes requieren autenticación
 router.use(authenticate);
 
