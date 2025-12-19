@@ -4,7 +4,6 @@ import { LogCategory } from '../utils/logger';
 import { CrearEnlaceDto, ActualizarEnlaceDto, QueryEnlaceDto } from '../dto';
 import { getMonteriaLocalDate } from '../utils/date.utils';
 import { SuscripcionesService } from './suscripciones.service';
-import { SUBSCRIPTION_PLANS } from '../config/stripe.config';
 
 export interface EnlaceRestaurante {
   id: string;
@@ -209,44 +208,25 @@ export class EnlacesService extends BaseService {
       this.handleError('Restaurante no encontrado', null, 404);
     }
 
-    // Verificar que el plan permite enlaces sociales (solo PRO y PREMIUM)
+    // Verificar límites de suscripción para enlaces
     try {
       const suscripcionesService = new SuscripcionesService();
-      const suscripcion = await suscripcionesService.obtenerPorRestauranteId(crearEnlaceDto.restauranteId);
+      const limites = await suscripcionesService.verificarLimites(crearEnlaceDto.restauranteId, 'enlaces');
       
-      if (suscripcion) {
-        const plan = SUBSCRIPTION_PLANS[suscripcion.tipoPlan as keyof typeof SUBSCRIPTION_PLANS];
-        // Verificar si el plan tiene enlaces sociales (según las features del plan)
-        // Los planes FREE no tienen enlaces sociales en sus features
-        const tieneEnlacesSociales = suscripcion.tipoPlan === 'pro' || suscripcion.tipoPlan === 'premium';
-        
-        if (!tieneEnlacesSociales) {
-          this.handleError(
-            'Los enlaces sociales solo están disponibles para planes PRO y PREMIUM. Por favor, actualiza tu plan para acceder a esta funcionalidad.',
-            null,
-            403
-          );
-        }
-      } else {
-        // Si no hay suscripción, asumir plan FREE (no permitir enlaces)
-        this.handleError(
-          'Los enlaces sociales solo están disponibles para planes PRO y PREMIUM. Por favor, actualiza tu plan para acceder a esta funcionalidad.',
-          null,
-          403
-        );
+      if (!limites.permitido) {
+        const mensaje = limites.limite === -1 
+          ? 'No se puede crear más enlaces. Por favor, actualiza tu plan para obtener límites ilimitados.'
+          : `Has alcanzado el límite de ${limites.limite} enlace(s) de tu plan actual (${limites.actual}/${limites.limite}). ` +
+            'Por favor, actualiza tu plan a PRO o PREMIUM para crear más enlaces.';
+        this.handleError(mensaje, null, 403);
       }
     } catch (error: any) {
-      // Si hay error al verificar, bloquear por seguridad (asumir plan FREE)
-      this.logger.warn('Error al verificar suscripción para enlaces sociales', {
+      // Si hay error al verificar límites, continuar (no bloquear)
+      this.logger.warn('Error al verificar límites de suscripción para enlaces', {
         categoria: this.logCategory,
         restauranteId: crearEnlaceDto.restauranteId,
         detalle: { error: error.message },
       });
-      this.handleError(
-        'Los enlaces sociales solo están disponibles para planes PRO y PREMIUM. Por favor, actualiza tu plan para acceder a esta funcionalidad.',
-        null,
-        403
-      );
     }
 
     // Si no se especifica orden, obtener el siguiente orden disponible

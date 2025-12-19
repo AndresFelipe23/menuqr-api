@@ -56,13 +56,13 @@ export class SuscripcionesController extends BaseController {
     const { restauranteId } = req.params;
     const { tipo } = req.query;
 
-    if (!tipo || !['items', 'mesas', 'usuarios'].includes(tipo as string)) {
-      return this.responseUtil.error(res, 'Tipo inválido. Debe ser: items, mesas o usuarios', 400, 'INVALID_TYPE');
+    if (!tipo || !['items', 'mesas', 'usuarios', 'categorias', 'enlaces'].includes(tipo as string)) {
+      return this.responseUtil.error(res, 'Tipo inválido. Debe ser: items, mesas, usuarios, categorias o enlaces', 400, 'INVALID_TYPE');
     }
 
     const limites = await this.suscripcionesService.verificarLimites(
       restauranteId,
-      tipo as 'items' | 'mesas' | 'usuarios'
+      tipo as 'items' | 'mesas' | 'usuarios' | 'categorias' | 'enlaces'
     );
 
     return this.responseUtil.success(res, limites, 'Límites verificados exitosamente', 200);

@@ -65,6 +65,7 @@ export const SUBSCRIPTION_PLANS = {
       'Hasta 5 mesas',
       '1 usuario (solo administrador)',
       'QR automático por mesa',
+      'Hasta 3 enlaces sociales',
       'Soporte por email',
       'Sin marca de agua',
     ],
@@ -73,6 +74,7 @@ export const SUBSCRIPTION_PLANS = {
       maxMesas: 5,
       maxUsuarios: 1,
       maxCategorias: 3,
+      maxEnlaces: 3,
       websockets: false, // Sin tiempo real
       analytics: false,
       reservas: false,
@@ -109,6 +111,7 @@ export const SUBSCRIPTION_PLANS = {
       maxMesas: -1,
       maxUsuarios: -1,
       maxCategorias: -1,
+      maxEnlaces: -1, // Ilimitado
       websockets: true,
       analytics: false,
       reservas: false,
@@ -153,6 +156,7 @@ export const SUBSCRIPTION_PLANS = {
       maxMesas: -1,
       maxUsuarios: -1,
       maxCategorias: -1,
+      maxEnlaces: -1, // Ilimitado
       websockets: true,
       analytics: true,
       reservas: true,

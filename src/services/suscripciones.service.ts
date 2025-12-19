@@ -851,7 +851,7 @@ export class SuscripcionesService extends BaseService {
   /**
    * Verifica los límites de un plan
    */
-  async verificarLimites(restauranteId: string, tipo: 'items' | 'mesas' | 'usuarios' | 'categorias'): Promise<{ permitido: boolean; limite: number; actual: number }> {
+  async verificarLimites(restauranteId: string, tipo: 'items' | 'mesas' | 'usuarios' | 'categorias' | 'enlaces'): Promise<{ permitido: boolean; limite: number; actual: number }> {
     try {
       let suscripcion: Suscripcion | null = null;
       try {
@@ -901,6 +901,12 @@ export class SuscripcionesService extends BaseService {
         } else if (tipo === 'categorias') {
           const resultado = await AppDataSource.query(
             `SELECT COUNT(*) as total FROM categorias WHERE restaurante_id = @0`,
+            [restauranteId]
+          );
+          actual = parseInt(resultado[0]?.total || 0, 10);
+        } else if (tipo === 'enlaces') {
+          const resultado = await AppDataSource.query(
+            `SELECT COUNT(*) as total FROM enlaces_restaurante WHERE restaurante_id = @0 AND fecha_eliminacion IS NULL`,
             [restauranteId]
           );
           actual = parseInt(resultado[0]?.total || 0, 10);
@@ -966,6 +972,12 @@ export class SuscripcionesService extends BaseService {
     } else if (tipo === 'categorias') {
       const resultado = await AppDataSource.query(
         `SELECT COUNT(*) as total FROM categorias WHERE restaurante_id = @0`,
+        [restauranteId]
+      );
+      actual = parseInt(resultado[0]?.total || 0, 10);
+    } else if (tipo === 'enlaces') {
+      const resultado = await AppDataSource.query(
+        `SELECT COUNT(*) as total FROM enlaces_restaurante WHERE restaurante_id = @0 AND fecha_eliminacion IS NULL`,
         [restauranteId]
       );
       actual = parseInt(resultado[0]?.total || 0, 10);
