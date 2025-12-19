@@ -5,6 +5,7 @@ import { CrearReservaDto, ActualizarReservaDto, QueryReservaDto } from '../dto';
 import { getMonteriaLocalDate } from '../utils/date.utils';
 import { SuscripcionesService } from './suscripciones.service';
 import { AppError } from '../middlewares/errorHandler';
+import { emailService } from './email.service';
 import crypto from 'crypto';
 
 export interface Reserva {
@@ -456,6 +457,42 @@ export class ReservasService extends BaseService {
     // Registrar en historial
     await this.registrarCambioEstado(reserva.id, null, 'pendiente', usuarioId || null, 'Reserva creada');
 
+    // Enviar email de notificación al restaurante sobre la nueva reserva
+    try {
+      const restauranteInfo = await AppDataSource.query(
+        `SELECT nombre, correo FROM restaurantes WHERE id = @0`,
+        [reserva.restauranteId]
+      );
+      const mesaInfo = await AppDataSource.query(
+        `SELECT numero FROM mesas WHERE id = @0`,
+        [reserva.mesaId]
+      );
+
+      if (restauranteInfo && restauranteInfo.length > 0 && restauranteInfo[0].correo) {
+        emailService.enviarNuevaReservaRestaurante({
+          nombreCliente: reserva.nombreCliente,
+          correoCliente: reserva.correoCliente,
+          telefonoCliente: reserva.telefonoCliente,
+          nombreRestaurante: restauranteInfo[0].nombre || 'Restaurante',
+          fechaReserva: reserva.fechaReserva,
+          numeroPersonas: reserva.numeroPersonas,
+          mesaNumero: mesaInfo && mesaInfo.length > 0 ? mesaInfo[0].numero : 'N/A',
+          notasCliente: reserva.notasCliente,
+        }, restauranteInfo[0].correo).catch(err => {
+          Logger.error('Error al enviar email de nueva reserva al restaurante', err instanceof Error ? err : new Error(String(err)), {
+            categoria: this.logCategory,
+            detalle: { reservaId: reserva.id, correoRestaurante: restauranteInfo[0].correo },
+          });
+        });
+      }
+    } catch (err) {
+      // No fallar la creación de la reserva si falla el email
+      Logger.error('Error al intentar enviar email de nueva reserva', err instanceof Error ? err : new Error(String(err)), {
+        categoria: this.logCategory,
+        detalle: { reservaId: reserva.id },
+      });
+    }
+
     // Log detallado de creación
     Logger.info('Reserva creada exitosamente', {
       categoria: this.logCategory,
@@ -845,6 +882,46 @@ export class ReservasService extends BaseService {
     const reserva = await this.obtenerPorId(reservaId);
     if (!reserva) {
       this.handleError('Error al actualizar la reserva', null, 500);
+    }
+
+    // Enviar email de confirmación si se confirmó la reserva
+    if (actualizarReservaDto.confirmada !== undefined && actualizarReservaDto.confirmada && !reservaExistente!.confirmada) {
+      // Obtener información del restaurante y mesa para el email
+      const restauranteInfo = await AppDataSource.query(
+        `SELECT nombre, correo FROM restaurantes WHERE id = @0`,
+        [reserva!.restauranteId]
+      );
+      const mesaInfo = await AppDataSource.query(
+        `SELECT numero FROM mesas WHERE id = @0`,
+        [reserva!.mesaId]
+      );
+
+      if (restauranteInfo && restauranteInfo.length > 0 && reserva!.correoCliente) {
+        emailService.enviarConfirmacionReserva({
+          nombreCliente: reserva!.nombreCliente,
+          correoCliente: reserva!.correoCliente,
+          nombreRestaurante: restauranteInfo[0].nombre || 'Restaurante',
+          fechaReserva: reserva!.fechaReserva,
+          numeroPersonas: reserva!.numeroPersonas,
+          mesaNumero: mesaInfo && mesaInfo.length > 0 ? mesaInfo[0].numero : 'N/A',
+          codigoConfirmacion: reserva!.codigoConfirmacion || '',
+          notasCliente: reserva!.notasCliente,
+        }).catch(err => {
+          Logger.error('Error al enviar email de confirmación de reserva', err instanceof Error ? err : new Error(String(err)), {
+            categoria: this.logCategory,
+            detalle: { reservaId: reservaId, correoCliente: reserva!.correoCliente },
+          });
+        });
+      } else {
+        Logger.warn('No se pudo enviar email de confirmación: faltan datos', {
+          categoria: this.logCategory,
+          detalle: { 
+            reservaId: reservaId, 
+            tieneRestaurante: restauranteInfo && restauranteInfo.length > 0,
+            tieneCorreoCliente: !!reserva!.correoCliente
+          },
+        });
+      }
     }
 
     // Determinar el tipo de acción realizada

@@ -10,6 +10,7 @@ import { errorHandler } from './middlewares/errorHandler';
 import { requestLogger } from './middlewares/requestLogger';
 import { initializeFirebase } from './config/firebase.config';
 import { initializeSocketIO } from './config/socket.config';
+import { initEmailTransport } from './config/email.config';
 
 // Importar rutas
 import authRoutes from './routes/auth.routes';
@@ -2820,6 +2821,19 @@ async function startServer() {
     } catch (firebaseError: any) {
       console.warn('⚠️ Advertencia: No se pudo inicializar Firebase:', firebaseError.message);
       console.warn('   El servicio de storage puede no funcionar correctamente');
+    }
+
+    // Inicializar servicio de email
+    try {
+      const emailTransport = initEmailTransport();
+      if (emailTransport) {
+        console.log('✅ Servicio de email inicializado correctamente');
+      } else {
+        console.warn('⚠️ Advertencia: Servicio de email no configurado. Los emails no se enviarán.');
+      }
+    } catch (emailError: any) {
+      console.warn('⚠️ Advertencia: No se pudo inicializar el servicio de email:', emailError.message);
+      console.warn('   Los emails de notificación no se enviarán');
     }
 
     // Verificar y conectar a la base de datos

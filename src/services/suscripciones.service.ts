@@ -658,6 +658,42 @@ export class SuscripcionesService extends BaseService {
               transactionId: wompiTransactionId,
             },
           });
+
+          // Enviar email de confirmación de pago
+          try {
+            const { emailService } = await import('./email.service');
+            
+            // Obtener información del restaurante
+            const restaurante = await AppDataSource.query(
+              `SELECT nombre, correo FROM restaurantes WHERE id = @0`,
+              [crearSuscripcionDto.restauranteId]
+            );
+
+            if (restaurante && restaurante.length > 0 && restaurante[0].correo) {
+              emailService.enviarConfirmacionPago({
+                nombreRestaurante: restaurante[0].nombre || 'Restaurante',
+                correoRestaurante: restaurante[0].correo,
+                tipoPlan: crearSuscripcionDto.tipoPlan,
+                monto: planPrice,
+                moneda: 'COP',
+                fechaPago: fechaActual,
+                transactionId: wompiTransactionId,
+                inicioPeriodo: suscripcionCreada.inicioPeriodoActual,
+                finPeriodo: suscripcionCreada.finPeriodoActual,
+                proveedorPago: 'wompi',
+              }).catch(err => {
+                Logger.error('Error al enviar email de confirmación de pago', err instanceof Error ? err : new Error(String(err)), {
+                  categoria: this.logCategory,
+                  detalle: { suscripcionId: suscripcionCreada.id },
+                });
+              });
+            }
+          } catch (err) {
+            Logger.warn('No se pudo enviar email de confirmación de pago', {
+              categoria: this.logCategory,
+              detalle: { error: err instanceof Error ? err.message : String(err) },
+            });
+          }
         }
       } catch (error: any) {
         Logger.warn('Error al registrar pago de Wompi (se registrará vía webhook)', {

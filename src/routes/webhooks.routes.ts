@@ -204,6 +204,42 @@ async function handlePaymentSucceeded(invoice: any) {
     categoria: LogCategory.SISTEMA,
     detalle: { suscripcionId: suscripcion[0].id, monto: amount },
   });
+
+  // Enviar email de confirmación de pago
+  try {
+    const { emailService } = await import('../services/email.service');
+    
+    // Obtener información del restaurante
+    const restaurante = await AppDataSource.query(
+      `SELECT nombre, correo FROM restaurantes WHERE id = @0`,
+      [suscripcion[0].restaurante_id]
+    );
+
+    if (restaurante && restaurante.length > 0 && restaurante[0].correo) {
+      emailService.enviarConfirmacionPago({
+        nombreRestaurante: restaurante[0].nombre || 'Restaurante',
+        correoRestaurante: restaurante[0].correo,
+        tipoPlan: suscripcion[0].tipo_plan,
+        monto: amount,
+        moneda: currency,
+        fechaPago: fechaPago,
+        transactionId: stripeInvoiceId,
+        inicioPeriodo: suscripcion[0].inicio_periodo_actual,
+        finPeriodo: suscripcion[0].fin_periodo_actual,
+        proveedorPago: 'stripe',
+      }).catch(err => {
+        Logger.error('Error al enviar email de confirmación de pago', err instanceof Error ? err : new Error(String(err)), {
+          categoria: LogCategory.SISTEMA,
+          detalle: { suscripcionId: suscripcion[0].id },
+        });
+      });
+    }
+  } catch (err) {
+    Logger.warn('No se pudo enviar email de confirmación de pago', {
+      categoria: LogCategory.SISTEMA,
+      detalle: { error: err instanceof Error ? err.message : String(err) },
+    });
+  }
 }
 
 /**
@@ -580,6 +616,42 @@ async function handleWompiTransactionUpdate(transaction: any) {
         categoria: LogCategory.SISTEMA,
         detalle: { suscripcionId: suscripcionActual.id, monto: amount, transactionId },
       });
+
+      // Enviar email de confirmación de pago
+      try {
+        const { emailService } = await import('../services/email.service');
+        
+        // Obtener información del restaurante
+        const restaurante = await AppDataSource.query(
+          `SELECT nombre, correo FROM restaurantes WHERE id = @0`,
+          [suscripcionActual.restaurante_id]
+        );
+
+        if (restaurante && restaurante.length > 0 && restaurante[0].correo) {
+          emailService.enviarConfirmacionPago({
+            nombreRestaurante: restaurante[0].nombre || 'Restaurante',
+            correoRestaurante: restaurante[0].correo,
+            tipoPlan: suscripcionActual.tipo_plan,
+            monto: amount,
+            moneda: currency.toUpperCase(),
+            fechaPago: fechaPago,
+            transactionId: transactionId,
+            inicioPeriodo: fechaActualDate.toISOString().replace('T', ' ').slice(0, 23),
+            finPeriodo: finPeriodoStr,
+            proveedorPago: 'wompi',
+          }).catch(err => {
+            Logger.error('Error al enviar email de confirmación de pago', err instanceof Error ? err : new Error(String(err)), {
+              categoria: LogCategory.SISTEMA,
+              detalle: { suscripcionId: suscripcionActual.id },
+            });
+          });
+        }
+      } catch (err) {
+        Logger.warn('No se pudo enviar email de confirmación de pago', {
+          categoria: LogCategory.SISTEMA,
+          detalle: { error: err instanceof Error ? err.message : String(err) },
+        });
+      }
     }
   } else {
     // Si el pago NO fue aprobado, solo actualizar el estado sin activar

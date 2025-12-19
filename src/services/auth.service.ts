@@ -8,6 +8,7 @@ import { jwtConfig } from '../config/jwt.config';
 import { LoginDto, RegisterDto, RefreshTokenDto } from '../dto';
 import { JwtPayload } from '../types';
 import { AppError } from '../middlewares/errorHandler';
+import { emailService } from './email.service';
 
 export interface AuthTokens {
   accessToken: string;
@@ -476,6 +477,49 @@ export class AuthService extends BaseService {
         timestamp: new Date().toISOString(),
       },
     });
+
+    // Enviar email de bienvenida (no bloqueante)
+    (async () => {
+      try {
+        console.log(`📧 Preparando envío de email de bienvenida a: ${newUser.correo}`);
+        
+        // Obtener nombre del restaurante si existe
+        let nombreRestaurante: string | null = null;
+        if (restauranteId) {
+          const restauranteData = await AppDataSource.query(
+            `SELECT nombre FROM restaurantes WHERE id = @0`,
+            [restauranteId]
+          );
+          if (restauranteData && restauranteData.length > 0) {
+            nombreRestaurante = restauranteData[0].nombre;
+          }
+        }
+
+        await emailService.enviarBienvenida({
+          nombreUsuario: newUser.nombre,
+          correoUsuario: newUser.correo,
+          nombreRestaurante: nombreRestaurante,
+          esAdministrador: roleInfo && roleInfo.length > 0 && roleInfo[0].nombre === 'Administrador',
+        });
+        
+        console.log(`✅ Email de bienvenida enviado exitosamente a: ${newUser.correo}`);
+      } catch (err) {
+        // No fallar el registro si falla el email, pero loguear el error
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.error(`❌ ERROR al enviar email de bienvenida a: ${newUser.correo}`);
+        console.error(`   Error: ${errorMessage}`);
+        
+        this.logger.error('Error al enviar email de bienvenida', err instanceof Error ? err : new Error(String(err)), {
+          categoria: this.logCategory,
+          detalle: { 
+            usuarioId: newUser.id, 
+            correo: newUser.correo,
+            error: errorMessage,
+            stack: err instanceof Error ? err.stack : undefined,
+          },
+        });
+      }
+    })();
 
     return {
       user: {

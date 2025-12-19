@@ -61,6 +61,26 @@ STRIPE_SECRET_KEY=
 STRIPE_WEBHOOK_SECRET=
 
 # ============================================
+# EMAIL (SendGrid SMTP o Gmail SMTP)
+# ============================================
+# Opción 1: SendGrid (Recomendado)
+EMAIL_PROVIDER=sendgrid
+SENDGRID_SMTP_HOST=smtp.sendgrid.net
+SENDGRID_SMTP_PORT=587
+SENDGRID_SMTP_SECURE=false
+SENDGRID_SMTP_USER=apikey
+SENDGRID_SMTP_PASS=SG.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EMAIL_FROM=MenuQR <noreply@qrestaurante.site>
+APP_NAME=MenuQR
+
+# Opción 2: Gmail (Alternativa)
+# EMAIL_PROVIDER=gmail
+# GMAIL_USER=tu-email@gmail.com
+# GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
+# EMAIL_FROM=MenuQR <tu-email@gmail.com>
+# APP_NAME=MenuQR
+
+# ============================================
 # CORS
 # ============================================
 CORS_ORIGIN=http://localhost:3000,http://localhost:5173
