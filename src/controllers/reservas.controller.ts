@@ -86,6 +86,16 @@ export class ReservasController extends BaseController {
   });
 
   /**
+   * Crea una nueva reserva desde el frontend público (no requiere autenticación)
+   */
+  public crearPublica = this.asyncHandler(async (req, res) => {
+    const crearReservaDto = this.getBody<CrearReservaDto>(req);
+    const requestInfo = this.getRequestInfo(req);
+    const reserva = await this.reservasService.crear(crearReservaDto, undefined, requestInfo);
+    return this.responseUtil.success(res, reserva, 'Solicitud de reserva enviada exitosamente. Será revisada por el restaurante.', 201);
+  });
+
+  /**
    * Confirma una reserva por código (público, no requiere autenticación)
    */
   public confirmarPorCodigo = this.asyncHandler(async (req, res) => {
