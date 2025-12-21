@@ -429,6 +429,16 @@ export class UsuariosService extends BaseService {
       if (!rol || rol.length === 0) {
         this.handleError('Rol no encontrado', null, 404);
       }
+
+      // Verificar que no sea SuperAdministrador
+      const nombreRol = rol[0].nombre?.toLowerCase();
+      if (nombreRol === 'superadministrador' || nombreRol === 'super administrador') {
+        this.handleError(
+          'El rol SuperAdministrador no puede ser asignado. Este rol es exclusivo para el dueño del sistema.',
+          null,
+          403
+        );
+      }
     }
 
     // Construir la consulta UPDATE dinámicamente
@@ -569,6 +579,25 @@ export class UsuariosService extends BaseService {
    * Asigna un rol a un usuario
    */
   private async asignarRol(usuarioId: string, rolId: string | null, restauranteId: string | null): Promise<void> {
+    // Si se proporciona un rol, verificar que no sea SuperAdministrador
+    if (rolId) {
+      const rol = await AppDataSource.query(
+        `SELECT id, nombre FROM roles WHERE id = @0`,
+        [rolId]
+      );
+
+      if (rol && rol.length > 0) {
+        const nombreRol = rol[0].nombre?.toLowerCase();
+        if (nombreRol === 'superadministrador' || nombreRol === 'super administrador') {
+          this.handleError(
+            'El rol SuperAdministrador no puede ser asignado. Este rol es exclusivo para el dueño del sistema.',
+            null,
+            403
+          );
+        }
+      }
+    }
+
     // Eliminar roles existentes del usuario para este restaurante
     await AppDataSource.query(`
       DELETE FROM roles_usuario 

@@ -22,6 +22,7 @@ export class RolesService extends BaseService {
 
   /**
    * Obtiene todos los roles con sus permisos
+   * Excluye el rol SuperAdministrador por seguridad
    */
   async obtenerTodos(): Promise<RolConPermisos[]> {
     const roles = await AppDataSource.query(`
@@ -32,6 +33,7 @@ export class RolesService extends BaseService {
         r.fecha_creacion,
         r.fecha_actualizacion
       FROM roles r
+      WHERE LOWER(r.nombre) NOT IN ('superadministrador', 'super administrador')
       ORDER BY r.nombre
     `);
 

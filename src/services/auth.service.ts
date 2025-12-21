@@ -386,6 +386,16 @@ export class AuthService extends BaseService {
         if (!rol || rol.length === 0) {
           this.handleError('El rol especificado no existe', null, 404);
         }
+
+        // Verificar que no sea SuperAdministrador
+        const nombreRol = rol[0].nombre?.toLowerCase();
+        if (nombreRol === 'superadministrador' || nombreRol === 'super administrador') {
+          this.handleError(
+            'El rol SuperAdministrador no puede ser asignado. Este rol es exclusivo para el dueño del sistema.',
+            null,
+            403
+          );
+        }
       }
     }
 
