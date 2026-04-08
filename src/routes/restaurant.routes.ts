@@ -63,6 +63,14 @@ router.post('/', authenticate, validateDto(CrearRestauranteDto), restaurantsCont
 router.put('/:id', authenticate, validateDto(ActualizarRestauranteDto), restaurantsController.actualizar);
 
 /**
+ * @route POST /api/restaurants/:id/generar-qr-pdf
+ * @description Genera o regenera el código QR del PDF del menú del restaurante
+ * @access Protegido (requiere autenticación)
+ * @query forzar - true para regenerar aunque ya exista
+ */
+router.post('/:id/generar-qr-pdf', authenticate, restaurantsController.generarQrMenuPdf);
+
+/**
  * @route DELETE /api/restaurants/:id
  * @description Elimina un restaurante (soft delete)
  * @access Protegido (requiere autenticación)

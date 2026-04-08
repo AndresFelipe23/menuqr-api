@@ -37,6 +37,11 @@ export class CrearRestauranteDto {
   @MaxLength(500, { message: 'La URL no puede exceder 500 caracteres' })
   imagenPortadaUrl?: string;
 
+  @IsString({ message: 'La URL del menú PDF debe ser una cadena de texto' })
+  @IsOptional()
+  @MaxLength(500, { message: 'La URL no puede exceder 500 caracteres' })
+  menuPdfUrl?: string;
+
   // Configuración de tema
   @IsString({ message: 'El color de tema debe ser una cadena de texto' })
   @IsOptional()

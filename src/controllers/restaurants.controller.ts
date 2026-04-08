@@ -100,5 +100,18 @@ export class RestaurantsController extends BaseController {
     await this.restaurantsService.eliminar(id, usuarioId, requestInfo);
     return this.responseUtil.success(res, null, 'Restaurante eliminado exitosamente', 200);
   });
+
+  public generarQrMenuPdf = this.asyncHandler(async (req: AuthenticatedRequest, res) => {
+    const { id } = req.params;
+    const forzarRegeneracion = req.query.forzar === 'true';
+
+    const restaurante = await this.restaurantsService.generarQrMenuPdf(id, forzarRegeneracion);
+    return this.responseUtil.success(
+      res,
+      restaurante,
+      forzarRegeneracion ? 'QR del PDF regenerado exitosamente' : 'QR del PDF generado exitosamente',
+      200
+    );
+  });
 }
 

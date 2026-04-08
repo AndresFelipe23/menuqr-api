@@ -3,6 +3,8 @@ import { BaseService } from './base.service';
 import { LogCategory } from '../utils/logger';
 import { CrearRestauranteDto, ActualizarRestauranteDto, QueryRestauranteDto } from '../dto';
 import { getMonteriaLocalDate } from '../utils/date.utils';
+import { StorageService } from './storage.service';
+import QRCode from 'qrcode';
 
 export interface Restaurante {
   id: string;
@@ -13,6 +15,9 @@ export interface Restaurante {
   biografia: string | null;
   imagenPerfilUrl: string | null;
   imagenPortadaUrl: string | null;
+  menuPdfUrl: string | null;
+  menuPdfQrUrl: string | null;
+  menuPdfQrImagenUrl: string | null;
   colorTema: string;
   colorTexto: string;
   colorFondo: string;
@@ -52,6 +57,23 @@ export interface PaginatedRestaurantes {
 
 export class RestaurantsService extends BaseService {
   protected logCategory = LogCategory.NEGOCIO;
+  private storageService = new StorageService();
+
+  private extractStoragePathFromPublicUrl(url?: string | null): string | null {
+    if (!url) return null;
+    const marker = '/o/';
+    const markerIndex = url.indexOf(marker);
+    if (markerIndex === -1) return null;
+
+    const encodedPath = url.slice(markerIndex + marker.length).split('?')[0];
+    if (!encodedPath) return null;
+
+    try {
+      return decodeURIComponent(encodedPath);
+    } catch {
+      return null;
+    }
+  }
 
   /**
    * Convierte un resultado de base de datos a la interfaz Restaurante
@@ -66,6 +88,9 @@ export class RestaurantsService extends BaseService {
       biografia: row.biografia,
       imagenPerfilUrl: row.imagen_perfil_url,
       imagenPortadaUrl: row.imagen_portada_url,
+      menuPdfUrl: row.menu_pdf_url,
+      menuPdfQrUrl: row.menu_pdf_qr_url,
+      menuPdfQrImagenUrl: row.menu_pdf_qr_imagen_url,
       colorTema: row.color_tema,
       colorTexto: row.color_texto,
       colorFondo: row.color_fondo,
@@ -158,7 +183,7 @@ export class RestaurantsService extends BaseService {
     const restaurantes = await AppDataSource.query(`
       SELECT 
         r.id, r.nombre, r.slug, r.correo, r.telefono,
-        r.biografia, r.imagen_perfil_url, r.imagen_portada_url,
+        r.biografia, r.imagen_perfil_url, r.imagen_portada_url, r.menu_pdf_url, r.menu_pdf_qr_url, r.menu_pdf_qr_imagen_url,
         r.color_tema, r.color_texto, r.color_fondo, r.familia_fuente,
         r.mostrar_menu, r.mostrar_enlaces, r.mostrar_contacto, r.habilitar_pedidos,
         r.direccion, r.ciudad, r.estado_provincia, r.pais, r.codigo_postal,
@@ -193,7 +218,7 @@ export class RestaurantsService extends BaseService {
     const restaurantes = await AppDataSource.query(`
       SELECT 
         r.id, r.nombre, r.slug, r.correo, r.telefono,
-        r.biografia, r.imagen_perfil_url, r.imagen_portada_url,
+        r.biografia, r.imagen_perfil_url, r.imagen_portada_url, r.menu_pdf_url, r.menu_pdf_qr_url, r.menu_pdf_qr_imagen_url,
         r.color_tema, r.color_texto, r.color_fondo, r.familia_fuente,
         r.mostrar_menu, r.mostrar_enlaces, r.mostrar_contacto, r.habilitar_pedidos,
         r.direccion, r.ciudad, r.estado_provincia, r.pais, r.codigo_postal,
@@ -219,7 +244,7 @@ export class RestaurantsService extends BaseService {
     const restaurantes = await AppDataSource.query(`
       SELECT 
         r.id, r.nombre, r.slug, r.correo, r.telefono,
-        r.biografia, r.imagen_perfil_url, r.imagen_portada_url,
+        r.biografia, r.imagen_perfil_url, r.imagen_portada_url, r.menu_pdf_url, r.menu_pdf_qr_url, r.menu_pdf_qr_imagen_url,
         r.color_tema, r.color_texto, r.color_fondo, r.familia_fuente,
         r.mostrar_menu, r.mostrar_enlaces, r.mostrar_contacto, r.habilitar_pedidos,
         r.direccion, r.ciudad, r.estado_provincia, r.pais, r.codigo_postal,
@@ -246,7 +271,7 @@ export class RestaurantsService extends BaseService {
       SELECT 
         r.id, r.nombre, r.slug, 
         NULL as correo, r.telefono,
-        r.biografia, r.imagen_perfil_url, r.imagen_portada_url,
+        r.biografia, r.imagen_perfil_url, r.imagen_portada_url, r.menu_pdf_url, r.menu_pdf_qr_url, r.menu_pdf_qr_imagen_url,
         r.color_tema, r.color_texto, r.color_fondo, r.familia_fuente,
         r.mostrar_menu, r.mostrar_enlaces, r.mostrar_contacto, r.habilitar_pedidos,
         r.direccion, r.ciudad, r.estado_provincia, r.pais, r.codigo_postal,
@@ -295,7 +320,7 @@ export class RestaurantsService extends BaseService {
     const resultado = await AppDataSource.query(`
       INSERT INTO restaurantes (
         nombre, slug, correo, telefono,
-        biografia, imagen_perfil_url, imagen_portada_url,
+        biografia, imagen_perfil_url, imagen_portada_url, menu_pdf_url, menu_pdf_qr_url, menu_pdf_qr_imagen_url,
         color_tema, color_texto, color_fondo, familia_fuente,
         mostrar_menu, mostrar_enlaces, mostrar_contacto, habilitar_pedidos,
         direccion, ciudad, estado_provincia, pais, codigo_postal,
@@ -305,7 +330,7 @@ export class RestaurantsService extends BaseService {
         fecha_creacion, fecha_actualizacion
       )
       OUTPUT INSERTED.id, INSERTED.nombre, INSERTED.slug, INSERTED.correo, INSERTED.telefono,
-        INSERTED.biografia, INSERTED.imagen_perfil_url, INSERTED.imagen_portada_url,
+        INSERTED.biografia, INSERTED.imagen_perfil_url, INSERTED.imagen_portada_url, INSERTED.menu_pdf_url, INSERTED.menu_pdf_qr_url, INSERTED.menu_pdf_qr_imagen_url,
         INSERTED.color_tema, INSERTED.color_texto, INSERTED.color_fondo, INSERTED.familia_fuente,
         INSERTED.mostrar_menu, INSERTED.mostrar_enlaces, INSERTED.mostrar_contacto, INSERTED.habilitar_pedidos,
         INSERTED.direccion, INSERTED.ciudad, INSERTED.estado_provincia, INSERTED.pais, INSERTED.codigo_postal,
@@ -314,9 +339,9 @@ export class RestaurantsService extends BaseService {
         INSERTED.activo, INSERTED.estado_suscripcion,
         INSERTED.fecha_creacion, INSERTED.fecha_actualizacion, INSERTED.fecha_eliminacion
       VALUES (
-        @0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10,
-        @11, @12, @13, @14, @15, @16, @17, @18, @19, @20, @21,
-        @22, @23, @24, @25, @26, @27, @28
+        @0, @1, @2, @3, @4, @5, @6, @7, @8, @9, @10, @11, @12, @13,
+        @14, @15, @16, @17, @18, @19, @20, @21, @22, @23, @24,
+        @25, @26, @27, @28, @29, @30, @31
       )
     `, [
       crearRestauranteDto.nombre,
@@ -326,6 +351,9 @@ export class RestaurantsService extends BaseService {
       crearRestauranteDto.biografia || null,
       crearRestauranteDto.imagenPerfilUrl || null,
       crearRestauranteDto.imagenPortadaUrl || null,
+      crearRestauranteDto.menuPdfUrl || null,
+      null, // menu_pdf_qr_url
+      null, // menu_pdf_qr_imagen_url
       crearRestauranteDto.colorTema || '#000000',
       crearRestauranteDto.colorTexto || '#FFFFFF',
       crearRestauranteDto.colorFondo || '#FFFFFF',
@@ -486,6 +514,16 @@ export class RestaurantsService extends BaseService {
       }
     }
 
+    const menuPdfAnterior = restaurante!.menuPdfUrl;
+    const menuPdfNuevo = actualizarRestauranteDto.menuPdfUrl;
+    const menuPdfCambio = menuPdfNuevo !== undefined && menuPdfNuevo !== menuPdfAnterior;
+    const debeEliminarPdfAnterior =
+      menuPdfCambio &&
+      menuPdfAnterior &&
+      menuPdfAnterior !== menuPdfNuevo;
+    const qrPdfAnteriorImagen = restaurante!.menuPdfQrImagenUrl;
+    const qrPdfAnteriorPath = this.extractStoragePathFromPublicUrl(qrPdfAnteriorImagen);
+
     // Construir la consulta UPDATE dinámicamente
     const campos: string[] = [];
     const valores: any[] = [];
@@ -531,6 +569,23 @@ export class RestaurantsService extends BaseService {
       campos.push(`imagen_portada_url = @${indice}`);
       valores.push(actualizarRestauranteDto.imagenPortadaUrl);
       indice++;
+    }
+
+    if (actualizarRestauranteDto.menuPdfUrl !== undefined) {
+      campos.push(`menu_pdf_url = @${indice}`);
+      valores.push(actualizarRestauranteDto.menuPdfUrl);
+      indice++;
+
+      // Si cambió el PDF (nuevo o eliminado), invalidar QR persistido.
+      if (menuPdfCambio) {
+        campos.push(`menu_pdf_qr_url = @${indice}`);
+        valores.push(null);
+        indice++;
+
+        campos.push(`menu_pdf_qr_imagen_url = @${indice}`);
+        valores.push(null);
+        indice++;
+      }
     }
 
     if (actualizarRestauranteDto.colorTema !== undefined) {
@@ -671,6 +726,42 @@ export class RestaurantsService extends BaseService {
       WHERE id = @${indice}
     `, valores);
 
+    // Si se reemplazó o eliminó el PDF, intentar borrar el archivo anterior del storage.
+    // Esta operación no bloquea el update del restaurante en caso de fallo.
+    if (debeEliminarPdfAnterior) {
+      const storagePathAnterior = this.extractStoragePathFromPublicUrl(menuPdfAnterior);
+      if (
+        storagePathAnterior &&
+        storagePathAnterior.startsWith(`MenuQR/${restauranteId}/menus-pdf/`)
+      ) {
+        try {
+          await this.storageService.deleteFile(storagePathAnterior);
+        } catch (error: any) {
+          this.logger.warn('No se pudo eliminar el PDF anterior del menú', {
+            categoria: this.logCategory,
+            restauranteId,
+            detalle: {
+              storagePathAnterior,
+              error: error?.message || String(error),
+            },
+          });
+        }
+      }
+    }
+
+    // Si el PDF cambió o se eliminó, borrar también la imagen QR anterior para evitar basura.
+    if (
+      menuPdfCambio &&
+      qrPdfAnteriorPath &&
+      qrPdfAnteriorPath.startsWith(`MenuQR/${restauranteId}/menus-pdf-qr/`)
+    ) {
+      try {
+        await this.storageService.deleteFile(qrPdfAnteriorPath);
+      } catch {
+        // No bloquear la actualización por fallo al limpiar QR anterior
+      }
+    }
+
     const restauranteActualizado = await this.obtenerPorId(restauranteId) as Restaurante;
 
     // Preparar información de cambios
@@ -711,6 +802,72 @@ export class RestaurantsService extends BaseService {
     });
 
     return restauranteActualizado;
+  }
+
+  async generarQrMenuPdf(
+    restauranteId: string,
+    forzarRegeneracion: boolean = false
+  ): Promise<Restaurante> {
+    const restaurante = await this.obtenerPorId(restauranteId);
+    if (!restaurante) {
+      this.handleError('Restaurante no encontrado', null, 404);
+    }
+
+    if (!restaurante!.menuPdfUrl) {
+      this.handleError('El restaurante no tiene un PDF de menú configurado', null, 400);
+    }
+
+    if (
+      !forzarRegeneracion &&
+      restaurante!.menuPdfQrUrl &&
+      restaurante!.menuPdfQrImagenUrl &&
+      restaurante!.menuPdfQrUrl === restaurante!.menuPdfUrl
+    ) {
+      return restaurante!;
+    }
+
+    const qrBuffer = await QRCode.toBuffer(restaurante!.menuPdfUrl!, {
+      errorCorrectionLevel: 'M',
+      type: 'png',
+      width: 700,
+      margin: 2,
+    });
+
+    const uploadResult = await this.storageService.uploadFile(
+      {
+        originalname: `qr-menu-pdf-${restauranteId}.png`,
+        buffer: qrBuffer,
+        mimetype: 'image/png',
+        size: qrBuffer.length,
+      },
+      restauranteId,
+      'menus-pdf-qr',
+      true
+    );
+
+    const qrAnteriorPath = this.extractStoragePathFromPublicUrl(restaurante!.menuPdfQrImagenUrl);
+    if (
+      qrAnteriorPath &&
+      qrAnteriorPath.startsWith(`MenuQR/${restauranteId}/menus-pdf-qr/`) &&
+      qrAnteriorPath !== uploadResult.path
+    ) {
+      try {
+        await this.storageService.deleteFile(qrAnteriorPath);
+      } catch {
+        // No bloquear respuesta si no se pudo borrar el QR anterior
+      }
+    }
+
+    await AppDataSource.query(
+      `UPDATE restaurantes SET menu_pdf_qr_url = @0, menu_pdf_qr_imagen_url = @1, fecha_actualizacion = @2 WHERE id = @3`,
+      [restaurante!.menuPdfUrl, uploadResult.url, getMonteriaLocalDate(), restauranteId]
+    );
+
+    const actualizado = await this.obtenerPorId(restauranteId);
+    if (!actualizado) {
+      this.handleError('Error al obtener restaurante actualizado', null, 500);
+    }
+    return actualizado!;
   }
 
   /**

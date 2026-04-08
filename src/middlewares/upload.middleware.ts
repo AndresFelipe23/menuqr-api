@@ -6,19 +6,21 @@ const storage = multer.memoryStorage();
 
 // Filtro de tipos de archivo permitidos
 const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
-  // Tipos MIME permitidos para imágenes
+  // Tipos MIME permitidos para imágenes y PDF
   const allowedMimes = [
     'image/jpeg',
     'image/jpg',
     'image/png',
     'image/gif',
     'image/webp',
+    'application/pdf',
+    'application/x-pdf',
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes (JPEG, PNG, GIF, WEBP)'));
+    cb(new Error('Tipo de archivo no permitido. Solo se permiten imágenes (JPEG, PNG, GIF, WEBP) o PDF'));
   }
 };
 

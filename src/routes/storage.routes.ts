@@ -21,6 +21,19 @@ router.post(
 );
 
 /**
+ * @route GET /api/storage/download
+ * @desc Descarga un archivo del storage vía backend (evita CORS)
+ * @access Private
+ * @query url - URL pública del archivo en Firebase
+ * @query filename - Nombre sugerido de descarga (opcional)
+ */
+router.get(
+  '/download',
+  authenticate,
+  storageController.downloadFile.bind(storageController)
+);
+
+/**
  * @route DELETE /api/storage
  * @desc Eliminar una imagen de Firebase Storage
  * @access Private
