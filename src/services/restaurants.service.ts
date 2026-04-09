@@ -59,6 +59,25 @@ export class RestaurantsService extends BaseService {
   protected logCategory = LogCategory.NEGOCIO;
   private storageService = new StorageService();
 
+  private getPublicApiBaseUrl(requestBaseUrl?: string): string {
+    if (requestBaseUrl && requestBaseUrl.trim()) {
+      return requestBaseUrl.replace(/\/+$/, '');
+    }
+    const fromEnv = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL;
+    if (fromEnv && fromEnv.trim()) {
+      return fromEnv.replace(/\/+$/, '');
+    }
+    if (process.env.NODE_ENV === 'production') {
+      return 'https://menusqr.site';
+    }
+    const port = process.env.PORT || '5290';
+    return `http://localhost:${port}`;
+  }
+
+  private buildMenuPdfRedirectUrl(slug: string, requestBaseUrl?: string): string {
+    return `${this.getPublicApiBaseUrl(requestBaseUrl)}/api/restaurants/public/${slug}/menu-pdf`;
+  }
+
   private extractStoragePathFromPublicUrl(url?: string | null): string | null {
     if (!url) return null;
     const marker = '/o/';
@@ -521,8 +540,6 @@ export class RestaurantsService extends BaseService {
       menuPdfCambio &&
       menuPdfAnterior &&
       menuPdfAnterior !== menuPdfNuevo;
-    const qrPdfAnteriorImagen = restaurante!.menuPdfQrImagenUrl;
-    const qrPdfAnteriorPath = this.extractStoragePathFromPublicUrl(qrPdfAnteriorImagen);
 
     // Construir la consulta UPDATE dinámicamente
     const campos: string[] = [];
@@ -575,17 +592,6 @@ export class RestaurantsService extends BaseService {
       campos.push(`menu_pdf_url = @${indice}`);
       valores.push(actualizarRestauranteDto.menuPdfUrl);
       indice++;
-
-      // Si cambió el PDF (nuevo o eliminado), invalidar QR persistido.
-      if (menuPdfCambio) {
-        campos.push(`menu_pdf_qr_url = @${indice}`);
-        valores.push(null);
-        indice++;
-
-        campos.push(`menu_pdf_qr_imagen_url = @${indice}`);
-        valores.push(null);
-        indice++;
-      }
     }
 
     if (actualizarRestauranteDto.colorTema !== undefined) {
@@ -749,19 +755,6 @@ export class RestaurantsService extends BaseService {
       }
     }
 
-    // Si el PDF cambió o se eliminó, borrar también la imagen QR anterior para evitar basura.
-    if (
-      menuPdfCambio &&
-      qrPdfAnteriorPath &&
-      qrPdfAnteriorPath.startsWith(`MenuQR/${restauranteId}/menus-pdf-qr/`)
-    ) {
-      try {
-        await this.storageService.deleteFile(qrPdfAnteriorPath);
-      } catch {
-        // No bloquear la actualización por fallo al limpiar QR anterior
-      }
-    }
-
     const restauranteActualizado = await this.obtenerPorId(restauranteId) as Restaurante;
 
     // Preparar información de cambios
@@ -806,7 +799,8 @@ export class RestaurantsService extends BaseService {
 
   async generarQrMenuPdf(
     restauranteId: string,
-    forzarRegeneracion: boolean = false
+    forzarRegeneracion: boolean = false,
+    requestBaseUrl?: string
   ): Promise<Restaurante> {
     const restaurante = await this.obtenerPorId(restauranteId);
     if (!restaurante) {
@@ -817,16 +811,18 @@ export class RestaurantsService extends BaseService {
       this.handleError('El restaurante no tiene un PDF de menú configurado', null, 400);
     }
 
+    const qrDestinoFijo = this.buildMenuPdfRedirectUrl(restaurante!.slug, requestBaseUrl);
+
     if (
       !forzarRegeneracion &&
       restaurante!.menuPdfQrUrl &&
       restaurante!.menuPdfQrImagenUrl &&
-      restaurante!.menuPdfQrUrl === restaurante!.menuPdfUrl
+      restaurante!.menuPdfQrUrl === qrDestinoFijo
     ) {
       return restaurante!;
     }
 
-    const qrBuffer = await QRCode.toBuffer(restaurante!.menuPdfUrl!, {
+    const qrBuffer = await QRCode.toBuffer(qrDestinoFijo, {
       errorCorrectionLevel: 'M',
       type: 'png',
       width: 700,
@@ -860,7 +856,7 @@ export class RestaurantsService extends BaseService {
 
     await AppDataSource.query(
       `UPDATE restaurantes SET menu_pdf_qr_url = @0, menu_pdf_qr_imagen_url = @1, fecha_actualizacion = @2 WHERE id = @3`,
-      [restaurante!.menuPdfUrl, uploadResult.url, getMonteriaLocalDate(), restauranteId]
+      [qrDestinoFijo, uploadResult.url, getMonteriaLocalDate(), restauranteId]
     );
 
     const actualizado = await this.obtenerPorId(restauranteId);
@@ -868,6 +864,14 @@ export class RestaurantsService extends BaseService {
       this.handleError('Error al obtener restaurante actualizado', null, 500);
     }
     return actualizado!;
+  }
+
+  async obtenerMenuPdfUrlPublicaPorSlug(slug: string): Promise<string | null> {
+    const restaurante = await this.obtenerPorSlug(slug);
+    if (!restaurante) {
+      return null;
+    }
+    return restaurante.menuPdfUrl || null;
   }
 
   /**

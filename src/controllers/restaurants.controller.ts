@@ -53,6 +53,17 @@ export class RestaurantsController extends BaseController {
     return this.responseUtil.success(res, restaurante, 'Restaurante obtenido exitosamente', 200);
   });
 
+  public redirigirMenuPdfPublico = this.asyncHandler(async (req, res) => {
+    const { slug } = req.params;
+    const menuPdfUrl = await this.restaurantsService.obtenerMenuPdfUrlPublicaPorSlug(slug);
+
+    if (!menuPdfUrl) {
+      return this.responseUtil.error(res, 'PDF de menú no disponible', 404, 'MENU_PDF_NOT_FOUND');
+    }
+
+    return res.redirect(302, menuPdfUrl);
+  });
+
   /**
    * Obtiene todos los restaurantes activos (público)
    */
@@ -104,8 +115,9 @@ export class RestaurantsController extends BaseController {
   public generarQrMenuPdf = this.asyncHandler(async (req: AuthenticatedRequest, res) => {
     const { id } = req.params;
     const forzarRegeneracion = req.query.forzar === 'true';
+    const requestBaseUrl = `${req.protocol}://${req.get('host')}`;
 
-    const restaurante = await this.restaurantsService.generarQrMenuPdf(id, forzarRegeneracion);
+    const restaurante = await this.restaurantsService.generarQrMenuPdf(id, forzarRegeneracion, requestBaseUrl);
     return this.responseUtil.success(
       res,
       restaurante,

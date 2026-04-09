@@ -15,6 +15,13 @@ const restaurantsController = new RestaurantsController();
 router.get('/public', restaurantsController.obtenerTodosPublicos);
 
 /**
+ * @route GET /api/restaurants/public/:slug/menu-pdf
+ * @description Redirecciona al PDF de menú actual del restaurante (URL estable para QR)
+ * @access Público
+ */
+router.get('/public/:slug/menu-pdf', restaurantsController.redirigirMenuPdfPublico);
+
+/**
  * @route GET /api/restaurants/public/:slug
  * @description Obtiene un restaurante por slug (público, no requiere autenticación)
  * @access Público
