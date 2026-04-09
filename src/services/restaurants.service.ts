@@ -78,6 +78,11 @@ export class RestaurantsService extends BaseService {
     return `${this.getPublicApiBaseUrl(requestBaseUrl)}/api/restaurants/public/${slug}/menu-pdf`;
   }
 
+  private appendQueryParam(url: string, key: string, value: string): string {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+  }
+
   private extractStoragePathFromPublicUrl(url?: string | null): string | null {
     if (!url) return null;
     const marker = '/o/';
@@ -871,7 +876,13 @@ export class RestaurantsService extends BaseService {
     if (!restaurante) {
       return null;
     }
-    return restaurante.menuPdfUrl || null;
+    if (!restaurante.menuPdfUrl) {
+      return null;
+    }
+
+    // Evita caché agresivo de redirects/archivos en navegadores y CDNs.
+    const version = new Date(restaurante.fechaActualizacion).getTime().toString();
+    return this.appendQueryParam(restaurante.menuPdfUrl, 'v', version);
   }
 
   /**

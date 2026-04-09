@@ -61,6 +61,10 @@ export class RestaurantsController extends BaseController {
       return this.responseUtil.error(res, 'PDF de menú no disponible', 404, 'MENU_PDF_NOT_FOUND');
     }
 
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
     return res.redirect(302, menuPdfUrl);
   });
 
